@@ -2,14 +2,14 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import { io } from "socket.io-client";
 import { SERVER_URL } from "../lib/config.js";
 import { fetchMessages } from "../lib/api.js";
-import { getSavedView, getToken, saveView } from "../lib/identity.js";
+import { getSavedView, getToken, rememberToken, saveView } from "../lib/identity.js";
 import { playSound } from "../lib/sounds.js";
 import { clearLegacyProfile, takeLegacyProfile } from "../lib/profile.js";
 import { ChatContext, ProfilesContext } from "./chat-context.js";
 import { TYPING_TTL_MS, chatReducer, createInitialState } from "./chatReducer.js";
 
 const REJECTIONS = {
-  NAME_TAKEN: "Esse nome já pertence a outra pessoa. Escolha outro — ou, se for seu, entre com o seu código de acesso.",
+  NAME_TAKEN: "Esse nome já tem dono. Se for você, cole o seu código de acesso.",
   INVALID_NAME: "Nome inválido. Use de 2 a 32 caracteres.",
   UNKNOWN_CODE: "Código de acesso não encontrado. Confira se copiou ele inteiro.",
   INVALID_TOKEN: "Código de acesso inválido. Confira se copiou ele inteiro.",
@@ -17,8 +17,22 @@ const REJECTIONS = {
   SERVER_ERROR: "O servidor teve um problema para te identificar. Tente de novo em instantes.",
 };
 
-// `login` = { name } ao criar conta / voltar, ou { name: null } ao entrar só com o
-// código. Ele só muda quando a pessoa entra ou sai, e é isso que recria a conexão.
+function rejectionMessage(err, login) {
+  if (err.message === "NAME_MISMATCH") {
+    const account = err.data?.name ?? "outra conta";
+    return login.token
+      ? `Esse código de acesso é da conta “${account}”, não de “${login.name}”.`
+      : `Este navegador está conectado à conta “${account}”. Entre com esse nome.`;
+  }
+  // Colou um código para um nome com dono e o servidor não reconheceu: código errado.
+  if (err.message === "NAME_TAKEN" && login.token) {
+    return `Código de acesso incorreto para “${login.name}”. Confira se copiou ele inteiro.`;
+  }
+  return REJECTIONS[err.message] ?? err.message;
+}
+
+// `login`: veja App.jsx. Ele só muda quando a pessoa entra ou sai, e é isso que
+// recria a conexão.
 export function ChatProvider({ login, onIdentity, onRejected, onLogout, children }) {
   const [state, dispatch] = useReducer(chatReducer, null, () => createInitialState(getSavedView()));
   const [socket, setSocket] = useState(null);
@@ -38,17 +52,20 @@ export function ChatProvider({ login, onIdentity, onRejected, onLogout, children
 
   useEffect(() => {
     const legacyProfile = takeLegacyProfile();
-    const auth = { token: getToken(), ...(login.name ? { name: login.name } : {}) };
+    // O código (novo, lembrado ou colado) só é gravado neste navegador depois que o
+    // servidor aceitar — um código errado não pode bagunçar o que já estava salvo.
+    const auth = { token: login.token ?? getToken(), name: login.name };
+    if (login.resume) auth.resume = true;
     if (legacyProfile) auth.profile = legacyProfile;
     const options = { auth };
     const client = SERVER_URL ? io(SERVER_URL, options) : io(options);
 
     client.on("session", (session) => {
-      // O perfil antigo já virou o da conta: não precisa mais dele aqui.
-      if (client.auth.profile) {
-        clearLegacyProfile();
-        client.auth = { token: client.auth.token, name: client.auth.name };
-      }
+      rememberToken(auth.token); // daqui para frente, nesta conta basta digitar o nome
+      if (auth.profile) clearLegacyProfile(); // o perfil antigo já virou o da conta
+      // Reconexões automáticas daqui para frente: o nome pode mudar (trocar nome),
+      // então o servidor só precisa reconhecer o código.
+      client.auth = { token: auth.token, name: session.self.name, resume: true };
       // Quem manda no nome é o servidor (pode ter mudado em outro aparelho).
       callbacks.current.onIdentity(session.self.name);
       dispatch({ type: "session", session });
@@ -57,7 +74,7 @@ export function ChatProvider({ login, onIdentity, onRejected, onLogout, children
     client.on("connect_error", (err) => {
       // `active` = o cliente vai tentar de novo sozinho (servidor fora do ar / acordando).
       // Se não está ativo, foi o servidor que recusou a conexão (ex: nome de outra pessoa).
-      if (!client.active) callbacks.current.onRejected(REJECTIONS[err.message] ?? err.message, err.message);
+      if (!client.active) callbacks.current.onRejected(rejectionMessage(err, login), err.message);
     });
     client.on("account:renamed", ({ name }) => {
       callbacks.current.onIdentity(name);
@@ -134,9 +151,21 @@ export function ChatProvider({ login, onIdentity, onRejected, onLogout, children
     dispatch({ type: "view", view });
   }, []);
 
-  const logout = useCallback(() => {
+  // { forget: true } = "Sair e esquecer este navegador": aqui, a próxima entrada nesta
+  // conta vai pedir o código de acesso. Sem isso, basta digitar o nome para voltar.
+  const logout = useCallback(
+    ({ forget = false } = {}) => {
+      socket?.disconnect();
+      callbacks.current.onLogout({ forget });
+    },
+    [socket],
+  );
+
+  // Desiste de entrar (ex: servidor demorando para acordar): volta para a tela de
+  // entrada sem esquecer a conta deste navegador, ao contrário do logout.
+  const cancelLogin = useCallback(() => {
     socket?.disconnect();
-    callbacks.current.onLogout();
+    callbacks.current.onRejected(null, "CANCELLED");
   }, [socket]);
 
   // Pedidos que mexem na conta (perfil, nome, exclusão): o servidor salva no banco.
@@ -158,7 +187,7 @@ export function ChatProvider({ login, onIdentity, onRejected, onLogout, children
     const result = await request("account:delete");
     if (result?.ok) {
       socket?.disconnect();
-      callbacks.current.onLogout();
+      callbacks.current.onLogout({ forget: true }); // a conta não existe mais
     }
     return result;
   }, [request, socket]);
@@ -172,11 +201,24 @@ export function ChatProvider({ login, onIdentity, onRejected, onLogout, children
       emitTyping,
       setView,
       logout,
+      cancelLogin,
       updateProfile,
       renameAccount,
       deleteAccount,
     }),
-    [state, socket, loadMessages, sendMessage, emitTyping, setView, logout, updateProfile, renameAccount, deleteAccount],
+    [
+      state,
+      socket,
+      loadMessages,
+      sendMessage,
+      emitTyping,
+      setView,
+      logout,
+      cancelLogin,
+      updateProfile,
+      renameAccount,
+      deleteAccount,
+    ],
   );
 
   const profiles = useMemo(

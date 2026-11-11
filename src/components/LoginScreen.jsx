@@ -1,39 +1,80 @@
-import { useState } from "react";
-import { isValidToken, normalizeName } from "../lib/identity.js";
+import { useEffect, useState } from "react";
+import { CircleCheck, KeyRound, LoaderCircle } from "lucide-react";
+import { checkName } from "../lib/api.js";
+import { getKnownTokens, isValidToken, newToken, normalizeName } from "../lib/identity.js";
 import { BrandMark } from "./ui.jsx";
 
-export default function LoginScreen({ initialName, error, onSubmitName, onSubmitCode }) {
-  const [mode, setMode] = useState("name"); // "name" (conta nova / voltar) | "code" (outro aparelho)
+// Um campo só: o nome. Enquanto a pessoa digita, o servidor confere sozinho:
+//   nome livre                       -> cria a conta
+//   essa conta já entrou aqui        -> entra direto, sem código
+//   nome de alguém que nunca entrou aqui -> pede o código de acesso
+export default function LoginScreen({ initialName, error, onSubmit }) {
   const [name, setName] = useState(initialName);
   const [code, setCode] = useState("");
+  const [check, setCheck] = useState(null); // { for, status, name, match }
+  const [submitting, setSubmitting] = useState(false);
   const [localError, setLocalError] = useState(null);
+  const normalized = normalizeName(name);
 
-  function handleSubmit(event) {
+  useEffect(() => {
+    if (!normalized) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      verify(normalized, controller.signal)
+        .then(setCheck)
+        .catch(() => {
+          // Sem resposta (rede, limite): tenta de novo ao apertar Entrar.
+          if (!controller.signal.aborted) setCheck({ for: normalized, status: "unknown" });
+        });
+    }, 300);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [normalized]);
+
+  const current = check?.for === normalized ? check : null;
+  const status = !normalized ? null : (current?.status ?? "checking");
+  const needsCode = status === "taken";
+
+  async function handleSubmit(event) {
     event.preventDefault();
-    if (mode === "code") {
-      const trimmed = code.trim();
-      if (!isValidToken(trimmed)) {
-        setLocalError("Esse não parece um código de acesso. Copie ele inteiro de Configurações > Conta.");
-        return;
-      }
-      onSubmitCode(trimmed);
-      return;
-    }
-    const normalized = normalizeName(name);
     if (!normalized) {
       setLocalError("Use de 2 a 32 caracteres.");
       return;
     }
-    onSubmitName(normalized);
-  }
 
-  function switchMode(next) {
-    setMode(next);
-    setLocalError(null);
+    // Apertou Entrar antes de a verificação terminar: confere agora.
+    let result = current;
+    if (!result || result.status === "unknown") {
+      setSubmitting(true);
+      try {
+        result = await verify(normalized);
+        setCheck(result);
+      } catch {
+        setSubmitting(false);
+        setLocalError("Não foi possível falar com o servidor. Tente de novo em instantes.");
+        return;
+      }
+      setSubmitting(false);
+    }
+
+    if (result.status === "yours") {
+      onSubmit(normalized, result.tokens[result.match]);
+    } else if (result.status === "free") {
+      onSubmit(normalized, newToken());
+    } else if (result.status === "taken") {
+      const trimmed = code.trim();
+      if (!trimmed) return; // o campo do código acabou de aparecer
+      if (!isValidToken(trimmed)) {
+        setLocalError("Cole o código de acesso inteiro (fica em Configurações → Conta, no aparelho onde você já entrou).");
+        return;
+      }
+      onSubmit(normalized, trimmed);
+    }
   }
 
   const shownError = localError ?? error;
-  const isCode = mode === "code";
 
   return (
     <main className="login">
@@ -42,46 +83,92 @@ export default function LoginScreen({ initialName, error, onSubmitName, onSubmit
           <BrandMark size={44} />
           <h1>Furicord</h1>
         </div>
-        <p className="login-lead">
-          {isCode
-            ? "Cole o código de acesso da sua conta (fica em Configurações > Conta, no aparelho onde você já entrou)."
-            : "Escolha um nome e entre. Sem senha: este navegador fica lembrado e o nome passa a ser só seu."}
-        </p>
+        <p className="login-lead">Digite seu nome para entrar. Se ainda não tem conta, ela é criada na hora — sem senha.</p>
 
-        <label className="field-label" htmlFor="login-input">
-          {isCode ? "Código de acesso" : "Nome de usuário"}
+        <label className="field-label" htmlFor="login-name">
+          Nome de usuário
         </label>
         <input
-          key={mode}
-          id="login-input"
-          className={isCode ? "text-input code-input" : "text-input"}
-          value={isCode ? code : name}
+          id="login-name"
+          className="text-input"
+          value={name}
           onChange={(event) => {
-            if (isCode) setCode(event.target.value);
-            else setName(event.target.value);
+            setName(event.target.value);
             setLocalError(null);
           }}
-          maxLength={isCode ? 128 : 40}
-          autoComplete={isCode ? "off" : "nickname"}
+          maxLength={40}
+          autoComplete="username"
           spellCheck={false}
           autoFocus
           aria-invalid={Boolean(shownError)}
-          aria-describedby={shownError ? "login-error" : undefined}
+          aria-describedby="login-status"
         />
+
+        <div id="login-status" className="login-status" aria-live="polite">
+          {status === "checking" && (
+            <span className="is-muted">
+              <LoaderCircle size={14} className="spin" /> Verificando…
+            </span>
+          )}
+          {status === "free" && (
+            <span className="is-ok">
+              <CircleCheck size={14} /> Nome disponível — ele vai ser só seu.
+            </span>
+          )}
+          {status === "yours" && (
+            <span className="is-ok">
+              <CircleCheck size={14} /> Você já entrou com esse nome neste navegador — não precisa de código.
+            </span>
+          )}
+        </div>
+
+        {needsCode && (
+          <div className="login-code">
+            <label className="field-label" htmlFor="login-code">
+              <KeyRound size={13} /> Código de acesso
+            </label>
+            <p className="login-code-hint">
+              “{current.name}” nunca entrou neste navegador. Se for você, cole o código de acesso da conta — ele fica em
+              Configurações → Conta, no aparelho onde você já entrou.
+            </p>
+            <input
+              id="login-code"
+              className="text-input code-input"
+              value={code}
+              onChange={(event) => {
+                setCode(event.target.value);
+                setLocalError(null);
+              }}
+              placeholder="Cole o código aqui"
+              autoComplete="off"
+              spellCheck={false}
+              autoFocus
+            />
+          </div>
+        )}
+
         {shownError && (
-          <p className="form-error" id="login-error" role="alert">
+          <p className="form-error" role="alert">
             {shownError}
           </p>
         )}
 
-        <button type="submit" className="button-primary" disabled={!(isCode ? code : name).trim()}>
-          Entrar
-        </button>
-
-        <button type="button" className="link-button login-switch" onClick={() => switchMode(isCode ? "name" : "code")}>
-          {isCode ? "Criar uma conta nova com um nome" : "Já tenho conta — entrar com código de acesso"}
+        <button
+          type="submit"
+          className="button-primary"
+          disabled={submitting || !name.trim() || (needsCode && !code.trim())}
+        >
+          {submitting ? "Verificando…" : status === "free" ? "Criar conta e entrar" : "Entrar"}
         </button>
       </form>
     </main>
   );
+}
+
+// Pergunta ao servidor sobre o nome, levando os códigos das contas que já entraram
+// neste navegador (ele responde qual deles, se algum, é da conta com esse nome).
+async function verify(name, signal) {
+  const tokens = getKnownTokens();
+  const result = await checkName(name, tokens, signal);
+  return { ...result, for: name, tokens };
 }

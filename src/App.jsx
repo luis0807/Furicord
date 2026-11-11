@@ -1,19 +1,21 @@
 import { useState } from "react";
-import { clearToken, getSavedName, saveName, setToken } from "./lib/identity.js";
+import { forgetToken, getSavedName, getToken, saveName } from "./lib/identity.js";
 import { ChatProvider } from "./state/ChatProvider.jsx";
 import { VoiceProvider } from "./voice/VoiceProvider.jsx";
 import LoginScreen from "./components/LoginScreen.jsx";
 import AppShell from "./components/AppShell.jsx";
 
-// Recusas em que o código deste navegador não serve mais: gera outro na próxima vez.
+// Recusas em que o código não serve mais: este navegador para de lembrar dele.
 const FORGET_TOKEN = new Set(["UNKNOWN_CODE", "INVALID_TOKEN", "DELETED"]);
 
 export default function App() {
-  // Já entrou antes neste navegador? Então conecta direto: o servidor reconhece o
-  // código de acesso e devolve o nome e o perfil da conta.
+  // `login` muda só quando a pessoa entra ou sai — é isso que recria a conexão.
+  //   { name, resume: true }  entrou da última vez e não saiu: conecta direto
+  //   { name, token }         entrada pela tela: o código já foi escolhido lá
+  //                           (lembrado deste navegador, novo, ou colado)
   const [login, setLogin] = useState(() => {
     const name = getSavedName();
-    return name ? { name } : null;
+    return name ? { name, resume: true } : null;
   });
   const [draftName, setDraftName] = useState(() => getSavedName() ?? "");
   const [loginError, setLoginError] = useState(null);
@@ -23,15 +25,10 @@ export default function App() {
       <LoginScreen
         initialName={draftName}
         error={loginError}
-        onSubmitName={(chosen) => {
-          setDraftName(chosen);
+        onSubmit={(name, token) => {
+          setDraftName(name);
           setLoginError(null);
-          setLogin({ name: chosen });
-        }}
-        onSubmitCode={(code) => {
-          setToken(code);
-          setLoginError(null);
-          setLogin({ name: null });
+          setLogin({ name, token });
         }}
       />
     );
@@ -45,16 +42,16 @@ export default function App() {
         setDraftName(name);
       }}
       onRejected={(message, code) => {
-        if (FORGET_TOKEN.has(code)) clearToken();
+        if (FORGET_TOKEN.has(code)) forgetToken(login.token ?? getToken());
         saveName(null);
         setLoginError(message);
         setLogin(null);
       }}
-      onLogout={() => {
-        // Sair = este navegador esquece a conta. Para voltar, só com o código de acesso.
-        clearToken();
+      onLogout={({ forget }) => {
+        // Sair: para de entrar sozinho, mas o navegador continua lembrando da conta
+        // (basta digitar o nome). Esquecer: aí só volta com o código de acesso.
+        if (forget) forgetToken(getToken());
         saveName(null);
-        setDraftName("");
         setLoginError(null);
         setLogin(null);
       }}

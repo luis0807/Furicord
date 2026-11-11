@@ -1,12 +1,15 @@
 // Conta sem senha: o servidor guarda nome e perfil ligados a um código de acesso
-// secreto que fica neste navegador. Quem tem o código entra como a pessoa — por isso
-// ele só sai daqui quando ela mesma copia (Configurações > Conta).
+// secreto. O navegador lembra o código de cada conta que já entrou nele — por isso,
+// aqui, basta digitar o nome; em outro navegador, a pessoa precisa colar o código.
 const NAME_KEY = "furicord.name";
-// Nome antigo da chave mantido de propósito: quem já usava o Furicord continua com o
-// mesmo código e o nome passa a ser dele na próxima conexão.
+// Código da conta ativa (a última que entrou aqui). Nome antigo da chave mantido de
+// propósito: quem já usava o Furicord continua com o mesmo código.
 const TOKEN_KEY = "furicord.clientId";
+// Códigos de todas as contas que já entraram neste navegador (a mais recente primeiro).
+const KNOWN_KEY = "furicord.knownTokens";
 const VIEW_KEY = "furicord.view";
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{20,128}$/;
+const MAX_KNOWN = 10;
 
 function read(key) {
   try {
@@ -28,6 +31,8 @@ function write(key, value) {
 export const getSavedName = () => read(NAME_KEY);
 export const saveName = (name) => write(NAME_KEY, name);
 
+// Código da conta ativa. Se não houver, cria um (para quem já tinha nome salvo de
+// antes das contas: a conta nasce com ele na próxima conexão).
 export function getToken() {
   let token = read(TOKEN_KEY);
   if (!token || !TOKEN_PATTERN.test(token)) {
@@ -38,8 +43,39 @@ export function getToken() {
 }
 
 export const isValidToken = (value) => TOKEN_PATTERN.test(value);
-export const setToken = (token) => write(TOKEN_KEY, token);
-export const clearToken = () => write(TOKEN_KEY, null);
+
+// Código novo para criar uma conta. Só é guardado quando o servidor aceitar.
+export const newToken = () => generateToken();
+
+export function getKnownTokens() {
+  let list = [];
+  try {
+    const parsed = JSON.parse(read(KNOWN_KEY));
+    if (Array.isArray(parsed)) list = parsed.filter((token) => typeof token === "string" && TOKEN_PATTERN.test(token));
+  } catch {
+    // lista corrompida: recomeça
+  }
+  // Quem entrou antes desta lista existir tem só o código ativo.
+  const active = read(TOKEN_KEY);
+  if (active && TOKEN_PATTERN.test(active) && !list.includes(active)) list.push(active);
+  return list.slice(0, MAX_KNOWN);
+}
+
+// A conta entrou: vira a ativa e passa a ser lembrada neste navegador.
+export function rememberToken(token) {
+  write(TOKEN_KEY, token);
+  const list = [token, ...getKnownTokens().filter((known) => known !== token)].slice(0, MAX_KNOWN);
+  write(KNOWN_KEY, JSON.stringify(list));
+}
+
+// "Sair e esquecer este navegador", conta excluída ou código recusado.
+export function forgetToken(token) {
+  write(
+    KNOWN_KEY,
+    JSON.stringify(getKnownTokens().filter((known) => known !== token)),
+  );
+  if (read(TOKEN_KEY) === token) write(TOKEN_KEY, null);
+}
 
 // 24 bytes aleatórios (192 bits). getRandomValues funciona até fora de HTTPS,
 // ao contrário de randomUUID.

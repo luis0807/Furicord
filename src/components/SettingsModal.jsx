@@ -10,8 +10,8 @@ import { getSoundsEnabled, playSound, setSoundsEnabled, subscribeSounds } from "
 import { IconButton } from "./ui.jsx";
 import ProfileEditor from "./ProfileEditor.jsx";
 
-const LOGOUT_WARNING =
-  "Sair desta conta neste navegador?\n\nPara voltar depois — aqui ou em outro aparelho — você vai precisar do código de acesso. Se ainda não copiou, cancele e copie na aba Conta.";
+const FORGET_WARNING =
+  "Sair e fazer este navegador esquecer a conta?\n\nPara entrar de novo aqui, você vai precisar do código de acesso. Se ainda não guardou, cancele e copie o código nesta aba.";
 
 const TABS = [
   { id: "conta", label: "Conta", icon: KeyRound },
@@ -64,7 +64,7 @@ export default function SettingsModal({ initialTab = "perfil", onClose }) {
           <button
             type="button"
             className="settings-tab is-danger"
-            onClick={() => confirmLeave() && window.confirm(LOGOUT_WARNING) && logout()}
+            onClick={() => confirmLeave() && logout()}
           >
             <LogOut size={18} /> Sair
           </button>
@@ -168,8 +168,9 @@ function AccountTab() {
       <section>
         <h3 className="field-label">Código de acesso</h3>
         <p className="settings-hint">
-          Sua conta não tem senha: este navegador é lembrado por este código. Use-o para entrar em outro aparelho ou
-          se limpar os dados do navegador. <strong>Quem tiver o código entra como você — não mostre para ninguém.</strong>
+          Sua conta não tem senha: este navegador é lembrado por este código. Para entrar em outro aparelho (ou se
+          limpar os dados do navegador), digite seu nome na tela de entrada e cole este código quando ele for pedido.{" "}
+          <strong>Quem tiver o código entra como você — não mostre para ninguém.</strong>
         </p>
         <div className="code-box">
           <code className={cls("code-value", !showCode && "is-hidden")}>{showCode ? code : "•".repeat(24)}</code>
@@ -183,11 +184,25 @@ function AccountTab() {
       </section>
 
       <section>
-        <h3 className="field-label">Sair deste navegador</h3>
-        <p className="settings-hint">O navegador esquece a conta. Ela continua existindo e você volta com o código.</p>
-        <button type="button" className="button-secondary" onClick={() => window.confirm(LOGOUT_WARNING) && logout()}>
-          <LogOut size={16} /> Sair
-        </button>
+        <h3 className="field-label">Sair</h3>
+        <p className="settings-hint">
+          <strong>Sair:</strong> para voltar neste navegador, é só digitar seu nome — sem código.
+          <br />
+          <strong>Sair e esquecer este navegador:</strong> para computador compartilhado. Quem tentar entrar com o seu
+          nome aqui vai precisar do código de acesso.
+        </p>
+        <div className="button-row">
+          <button type="button" className="button-secondary" onClick={() => logout()}>
+            <LogOut size={16} /> Sair
+          </button>
+          <button
+            type="button"
+            className="button-ghost"
+            onClick={() => window.confirm(FORGET_WARNING) && logout({ forget: true })}
+          >
+            Sair e esquecer este navegador
+          </button>
+        </div>
       </section>
 
       <section className="danger-zone">

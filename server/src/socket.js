@@ -11,11 +11,15 @@ import { messageProfile, sanitizeProfile } from "./lib/profile.js";
 import { cleanToken, clientIp, hashToken } from "./lib/accounts.js";
 
 /*
- * Conexão: auth { token, name?, profile? }
+ * Conexão: auth { token, name?, resume?, profile? }
  *   token   = código de acesso secreto deste navegador (a "conta", sem senha)
- *   name    = nome escolhido; só usado para criar a conta na primeira vez
+ *   name    = nome digitado. Sem conta: cria a conta com ele. Com conta: precisa
+ *             ser o nome dela (senão NAME_MISMATCH, com err.data.name = nome da conta)
+ *   resume  = reconexão automática (nome salvo): não confere o nome, que pode ter
+ *             mudado em outro aparelho
  *   profile = perfil antigo que estava só no navegador (migra para a conta nova)
- *   Erros: INVALID_TOKEN, UNKNOWN_CODE, INVALID_NAME, NAME_TAKEN, TOO_MANY_SIGNUPS, SERVER_ERROR
+ *   Erros: INVALID_TOKEN, UNKNOWN_CODE, INVALID_NAME, NAME_TAKEN, NAME_MISMATCH,
+ *          TOO_MANY_SIGNUPS, SERVER_ERROR
  *
  * Eventos (cliente -> servidor)
  *   message:send { channelId, content, attachmentIds }   -> ack { ok, message } | { error }
@@ -101,6 +105,11 @@ export function attachSocket(httpServer) {
           account = await User.findOne({ tokenHash }).lean();
           if (!account) return next(new Error("NAME_TAKEN"));
         }
+      } else if (!auth.resume && auth.name != null && nameKey(normalizeName(auth.name) ?? "") !== account.nameKey) {
+        // Entrada digitada: o nome tem que ser o da conta deste código.
+        const err = new Error("NAME_MISMATCH");
+        err.data = { name: account.name };
+        return next(err);
       } else if (!account.profile && auth.profile) {
         // Conta sem perfil: aproveita o que ainda estava guardado só no navegador.
         const profile = sanitizeProfile(auth.profile);

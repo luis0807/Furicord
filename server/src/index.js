@@ -7,6 +7,7 @@ import { attachSocket } from "./socket.js";
 import { notFound, errorHandler } from "./middleware/error.js";
 import channelsRoutes from "./routes/channels.routes.js";
 import uploadsRoutes from "./routes/uploads.routes.js";
+import accountsRoutes from "./routes/accounts.routes.js";
 
 const app = express();
 
@@ -20,6 +21,7 @@ app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 app.get("/api/ice", (req, res) => res.json({ iceServers: ICE_SERVERS }));
 app.use("/api/channels", channelsRoutes);
 app.use("/api/uploads", uploadsRoutes);
+app.use("/api/accounts", accountsRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

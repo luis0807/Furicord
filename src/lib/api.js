@@ -21,6 +21,17 @@ export async function fetchIceServers() {
   }
 }
 
+// Confere se o nome está livre, já entrou neste navegador (um dos `tokens`) ou tem
+// outro dono.
+export function checkName(name, tokens, signal) {
+  return request("/accounts/check", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, tokens }),
+    signal,
+  });
+}
+
 export function uploadImage(file, { width, height } = {}) {
   const form = new FormData();
   if (width) form.append("width", String(width));

@@ -53,5 +53,12 @@ export function maxBitrate({ resolution, fps }) {
   return base;
 }
 
+// Quando a conexão com alguém passa pelo servidor de retransmissão (TURN), a tela
+// vai para essa pessoa numa qualidade econômica: o TURN tem franquia mensal de dados
+// e a transmissão de tela é o que mais gasta (cerca de 0,5 GB por hora assim, contra
+// 2 a 6 GB por hora na qualidade cheia).
+export const RELAY_MAX_BITRATE = 1_200_000;
+export const RELAY_MAX_FPS = 20;
+
 // "detail" prioriza nitidez (texto, código); "motion" prioriza fluidez (jogos, vídeo).
 export const contentHintFor = ({ fps }) => (fps >= 60 ? "motion" : "detail");

@@ -9,6 +9,8 @@ import { createRateLimiter } from "./lib/rateLimit.js";
 import { nameKey, normalizeName } from "./lib/names.js";
 import { messageProfile, sanitizeProfile } from "./lib/profile.js";
 import { cleanToken, clientIp, hashToken } from "./lib/accounts.js";
+import { getIceConfig } from "./lib/ice.js";
+import { addTurnUsage, turnAlert } from "./lib/turnBudget.js";
 
 // Lista de membros: quantas contas offline ficam guardadas e quantas aparecem.
 const MAX_LOADED_ACCOUNTS = 1000;
@@ -16,6 +18,9 @@ const MAX_OFFLINE_LISTED = 200;
 // De quanto em quanto tempo a lista é conferida com o banco (contas excluídas,
 // criadas ou renomeadas fora deste servidor).
 const REFRESH_MS = 30_000;
+// Avisos de uso do TURN: o máximo que um navegador pode declarar de uma vez.
+const TURN_REPORT_MAX_MS = 2 * 60_000;
+const TURN_REPORT_MAX_BPS = 40_000_000;
 
 /*
  * Conexão: auth { token, name?, resume?, profile? }
@@ -34,13 +39,17 @@ const REFRESH_MS = 30_000;
  *   voice:join   { channelId, sid, muted, deafened, sharing } -> ack { ok, peers } | { error }
  *   voice:update { muted?, deafened?, sharing? }
  *   voice:leave
+ *   ice:get      -> ack { iceServers, turnLimited } | { error }
+ *   turn:usage   { bytes }   (bytes recebidos pelo TURN desde o último aviso)
  *   rtc:signal   { to, data }   (oferta/resposta/candidato ICE, repassado sem olhar o conteúdo)
  *   profile:update profile      -> ack { ok, profile } | { error }
  *   account:rename { name }     -> ack { ok, name } | { error }
  *   account:delete              -> ack { ok } | { error }
  *
  * Eventos (servidor -> cliente)
- *   session      { self: { id, name, isNew }, channels, users, voice }   (após conectar/reconectar)
+ *   session      { self: { id, name, isNew }, channels, users, voice, turnAlert }   (após conectar/reconectar)
+ *   turn:alert   { month, usedGB, limitGB, alertGB, blocked }   (consumo do TURN passou de um alerta)
+ *   turn:limit                  (limite mensal do TURN atingido: encerrar o que passa por ele)
  *   account:renamed { name }    (para todas as abas da conta)
  *   account:deleted             (para as outras abas, ou se a conta for excluída fora daqui)
  *   presence     [{ name, profile, online }]   (contas online e as offline mais recentes)
@@ -228,6 +237,7 @@ export function attachSocket(httpServer) {
       channels: { text: TEXT_CHANNELS, voice: VOICE_CHANNELS },
       users: listUsers(),
       voice: listVoice(),
+      turnAlert: turnAlert(), // consumo do TURN já passou de um alerta? (ou null)
     });
     broadcastPresence();
 
@@ -370,6 +380,28 @@ export function attachSocket(httpServer) {
     // --- Voz -------------------------------------------------------------------
     // O servidor não toca em áudio nem vídeo: só diz quem está em cada sala e repassa
     // as mensagens de negociação do WebRTC. A mídia vai direto de navegador para navegador.
+
+    // Servidores STUN/TURN para a chamada. As credenciais do TURN são temporárias.
+    socket.on("ice:get", async (payload, ack) => {
+      const respond = reply(payload, ack);
+      try {
+        respond(await getIceConfig());
+      } catch {
+        respond({ error: "Não foi possível obter os servidores de voz" });
+      }
+    });
+
+    // O navegador avisa quantos bytes recebeu pelo TURN desde o último aviso.
+    socket.on("turn:usage", (payload) => {
+      if (!voice.has(socket.id)) return;
+      const now = Date.now();
+      const elapsed = Math.min(now - (socket.data.turnReportAt ?? now - TURN_REPORT_MAX_MS), TURN_REPORT_MAX_MS);
+      socket.data.turnReportAt = now;
+      // Teto por aviso: um número absurdo (bug ou má-fé) não desliga o TURN de todos.
+      const ceiling = (TURN_REPORT_MAX_BPS / 8) * (elapsed / 1000);
+      const bytes = Math.min(Number(payload?.bytes) || 0, ceiling);
+      if (bytes > 0) addTurnUsage(bytes);
+    });
 
     socket.on("voice:join", (payload, ack) => {
       const respond = reply(payload, ack);

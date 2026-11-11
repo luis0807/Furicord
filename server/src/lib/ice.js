@@ -1,4 +1,5 @@
 import { CLOUDFLARE_TURN, ICE_SERVERS } from "../config.js";
+import { turnBlocked } from "./turnBudget.js";
 
 /*
  * Servidores STUN/TURN entregues aos navegadores para a voz e a tela.
@@ -8,6 +9,9 @@ import { CLOUDFLARE_TURN, ICE_SERVERS } from "../config.js";
  * o áudio/vídeo. Com CLOUDFLARE_TURN_KEY_ID + CLOUDFLARE_TURN_API_TOKEN, o servidor
  * gera credenciais temporárias do TURN da Cloudflare (a chave secreta nunca vai para
  * o navegador). Sem isso, usa ICE_SERVERS (fixo, qualquer provedor) ou só STUN.
+ *
+ * Só é entregue pelo socket, a quem está logado: numa rota aberta, qualquer um
+ * pegaria a credencial e gastaria a franquia do TURN por fora do Furicord.
  */
 
 const TTL_SECONDS = 24 * 60 * 60;
@@ -17,7 +21,37 @@ const RENEW_BEFORE_MS = 6 * 60 * 60 * 1000;
 let cached = null; // { iceServers, expiresAt }
 let pending = null;
 
-export async function getIceServers() {
+// -> { iceServers, turnLimited }. `turnLimited`: o limite mensal acabou (lib/turnBudget.js).
+export async function getIceConfig() {
+  if (turnBlocked()) return { iceServers: ICE_SERVERS, turnLimited: true };
+  return { iceServers: await getIceServers(), turnLimited: false };
+}
+
+// Limite mensal atingido: cancela a credencial em uso, para as chamadas que já
+// estavam passando pelo TURN também pararem de gastar.
+export async function revokeTurnCredential() {
+  const current = cached;
+  cached = null;
+  if (!CLOUDFLARE_TURN || !current) return;
+  const usernames = new Set(current.iceServers.map((server) => server.username).filter(Boolean));
+  for (const username of usernames) {
+    try {
+      const response = await fetch(
+        `https://rtc.live.cloudflare.com/v1/turn/keys/${encodeURIComponent(CLOUDFLARE_TURN.keyId)}/credentials/${encodeURIComponent(username)}/revoke`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${CLOUDFLARE_TURN.apiToken}` },
+          signal: AbortSignal.timeout(5000),
+        },
+      );
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    } catch (err) {
+      console.error("Não foi possível cancelar a credencial TURN na Cloudflare:", err.message);
+    }
+  }
+}
+
+async function getIceServers() {
   if (!CLOUDFLARE_TURN) return ICE_SERVERS;
   if (cached && cached.expiresAt - Date.now() > RENEW_BEFORE_MS) return cached.iceServers;
 

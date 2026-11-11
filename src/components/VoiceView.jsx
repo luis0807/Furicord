@@ -104,7 +104,7 @@ function VoiceStage({ participants }) {
       isSelf={tile.isSelf}
       speaking={isSpeaking(tile.participant.id)}
       connectionState={
-        tile.isSelf ? "connected" : peerStatus(voice.peers[tile.participant.id], voice.waitingSince[tile.participant.id])
+        tile.isSelf ? "connected" : peerStatus(voice.peers[tile.participant.id], voice.waitingSince[tile.participant.id], voice.turnLimited)
       }
     />
   );
@@ -153,10 +153,13 @@ const CONNECTION_LABELS = {
   slow: "Demorando para conectar…",
   disconnected: "Conexão instável…",
   failed: "Não conectou — a rede bloqueou a chamada. Saia e entre de novo para tentar.",
+  // A rede desta conexão precisa do servidor de retransmissão, e a franquia do mês acabou.
+  limit: "Sem conexão — o limite mensal do servidor de retransmissão acabou. Volta a funcionar no dia 1º.",
 };
 
 // Mesmos prazos das conexões já criadas (VoiceEngine).
-function peerStatus(peer, waitingSince) {
+function peerStatus(peer, waitingSince, turnLimited) {
+  if (peer?.blocked || (turnLimited && peer?.connectionState === "failed")) return "limit";
   if (peer) return peer.slow ? "slow" : peer.connectionState;
   // Ainda não chegou nem a oferta de conexão dessa pessoa.
   const waited = waitingSince ? Date.now() - waitingSince : 0;

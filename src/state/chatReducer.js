@@ -11,6 +11,7 @@ export function createInitialState(savedView) {
     channels: { text: [], voice: [] },
     users: [],
     voice: [],
+    turnAlert: null, // { month, usedGB, limitGB, alertGB, blocked } — consumo do TURN
     messages: {}, // channelId -> { items, loading, loaded, hasMore, error }
     typing: {}, // channelId -> { nome: expiraEm }
     unread: {}, // channelId -> true
@@ -46,7 +47,7 @@ function isViewValid(view, channels) {
 export function chatReducer(state, action) {
   switch (action.type) {
     case "session": {
-      const { self, channels, users, voice } = action.session;
+      const { self, channels, users, voice, turnAlert = null } = action.session;
       const view = isViewValid(state.view, channels)
         ? state.view
         : { type: "text", id: channels.text[0]?.id };
@@ -60,6 +61,7 @@ export function chatReducer(state, action) {
         channels,
         users,
         voice,
+        turnAlert,
         view,
         messages: {},
         typing: {},
@@ -77,6 +79,9 @@ export function chatReducer(state, action) {
 
     case "voice":
       return { ...state, voice: action.voice };
+
+    case "turnAlert":
+      return { ...state, turnAlert: action.alert };
 
     case "view": {
       const { view } = action;

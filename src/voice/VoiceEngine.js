@@ -1,5 +1,7 @@
 import { randomId } from "../lib/identity.js";
 import {
+  RELAY_MAX_BITRATE,
+  RELAY_MAX_FPS,
   contentHintFor,
   loadStreamQuality,
   maxBitrate,
@@ -34,6 +36,12 @@ const MAX_ICE_RESTARTS = 1;
 export const SLOW_CONNECT_MS = 12_000;
 // ...e quando desiste (ou religa uma vez, se for quem começou a conexão).
 export const CONNECT_TIMEOUT_MS = 25_000;
+// De quanto em quanto tempo confere por onde cada conexão está passando (direto ou
+// pelo TURN) e quantos bytes chegaram pelo TURN...
+const STATS_INTERVAL_MS = 5000;
+// ...e a cada quantas conferências avisa o servidor, que controla a franquia do mês.
+const STATS_PER_REPORT = 6;
+const STUN_ONLY = [{ urls: "stun:stun.l.google.com:19302" }];
 
 export class VoiceEngine {
   listeners = new Set();
@@ -42,6 +50,9 @@ export class VoiceEngine {
   speaking = new Set();
 
   iceServers = null;
+  turnLimited = false; // a franquia mensal do TURN acabou
+  turnBytes = 0; // recebidos pelo TURN e ainda não avisados ao servidor
+  statsTicks = 0;
   channelId = null; // sala em que estamos de fato
   pendingChannelId = null; // sala em que estamos tentando entrar
   rejoinChannelId = null; // sala para voltar quando o socket reconectar
@@ -63,12 +74,14 @@ export class VoiceEngine {
   waitingMic = false;
   waitingSince = new Map();
 
-  constructor(socket, getIceServers) {
+  constructor(socket) {
     this.socket = socket;
-    this.getIceServers = getIceServers;
     this.handleSignal = this.handleSignal.bind(this);
     this.handleDisconnect = this.handleDisconnect.bind(this);
     this.handleSession = this.handleSession.bind(this);
+    this.handleTurnLimit = this.handleTurnLimit.bind(this);
+    socket.on("turn:limit", this.handleTurnLimit);
+    this.statsTimer = setInterval(() => this.pollStats(), STATS_INTERVAL_MS);
     socket.on("rtc:signal", this.handleSignal);
     socket.on("disconnect", this.handleDisconnect);
     socket.on("session", this.handleSession);
@@ -101,6 +114,10 @@ export class VoiceEngine {
           !peer.gaveUp &&
           ["new", "connecting", "disconnected"].includes(peer.pc.connectionState) &&
           Date.now() - peer.since > SLOW_CONNECT_MS,
+        // Passa pelo servidor de retransmissão (TURN) em vez de ir direto.
+        relayed: peer.relayed,
+        // Encerrada porque a franquia mensal do TURN acabou.
+        blocked: peer.blocked,
         micStream: peer.micStream,
         screenStream: peer.screenStream,
         screenAudioStream: peer.screenAudioStream,
@@ -120,6 +137,7 @@ export class VoiceEngine {
       screenStream: this.screenStream,
       streamQuality: this.streamQuality,
       error: this.error,
+      turnLimited: this.turnLimited,
       speaking: new Set(this.speaking),
       peers,
     };
@@ -155,7 +173,9 @@ export class VoiceEngine {
       if (cancelled()) return;
 
       // A cada entrada: as credenciais do TURN são temporárias.
-      this.iceServers = await this.getIceServers();
+      const ice = await this.fetchIce();
+      this.iceServers = ice.iceServers;
+      this.turnLimited = ice.turnLimited;
       if (cancelled()) return;
 
       const sid = randomId();
@@ -198,6 +218,7 @@ export class VoiceEngine {
 
   leave({ keepMic = false } = {}) {
     const wasActive = Boolean(this.channelId || this.joinToken || this.rejoinChannelId);
+    this.reportTurnUsage();
     if (this.sid) this.socket.emit("voice:leave");
     this.joinToken = null;
     this.pendingChannelId = null;
@@ -265,6 +286,8 @@ export class VoiceEngine {
     this.socket.off("rtc:signal", this.handleSignal);
     this.socket.off("disconnect", this.handleDisconnect);
     this.socket.off("session", this.handleSession);
+    this.socket.off("turn:limit", this.handleTurnLimit);
+    clearInterval(this.statsTimer);
     clearInterval(this.speakingTimer);
     this.audioContext?.close().catch(() => {});
     this.listeners.clear();
@@ -433,12 +456,16 @@ export class VoiceEngine {
   // Sem isso o navegador limita a tela em ~2,5 Mbps, pouco para 1080p/60.
   applyVideoEncoding(peer) {
     const sender = peer.tr?.video.sender;
-    if (!sender || peer.closed) return;
+    if (!sender || peer.closed || peer.blocked) return;
     const params = sender.getParameters();
     // Antes da negociação terminar ainda não há encodings; chamamos de novo depois.
     if (!params.encodings?.length) return;
-    params.encodings[0].maxBitrate = maxBitrate(this.streamQuality);
-    params.encodings[0].maxFramerate = this.streamQuality.fps;
+    const bitrate = maxBitrate(this.streamQuality);
+    // Pelo TURN vai em qualidade econômica (ver RELAY_MAX_BITRATE).
+    params.encodings[0].maxBitrate = peer.relayed ? Math.min(bitrate, RELAY_MAX_BITRATE) : bitrate;
+    params.encodings[0].maxFramerate = peer.relayed
+      ? Math.min(this.streamQuality.fps, RELAY_MAX_FPS)
+      : this.streamQuality.fps;
     sender.setParameters(params).catch(warn);
   }
 
@@ -455,6 +482,102 @@ export class VoiceEngine {
     this.changed();
   }
 
+  // --- Servidores de conexão e franquia do TURN -----------------------------------
+
+  // Pedido pelo socket (só quem está logado recebe credencial do TURN). Com prazo: o
+  // servidor gratuito pode estar acordando; sem resposta, entra só com STUN.
+  async fetchIce() {
+    try {
+      const result = await this.socket.timeout(8000).emitWithAck("ice:get");
+      if (Array.isArray(result?.iceServers)) {
+        return { iceServers: result.iceServers, turnLimited: Boolean(result.turnLimited) };
+      }
+    } catch {
+      // cai no padrão abaixo
+    }
+    return { iceServers: STUN_ONLY, turnLimited: false };
+  }
+
+  // Confere por onde cada conexão passa. O que chega pelo TURN conta na franquia
+  // mensal (a Cloudflare cobra o que ela envia para quem usa o TURN), então somamos
+  // os bytes recebidos e avisamos o servidor de tempos em tempos.
+  async pollStats() {
+    for (const peer of [...this.peers.values()]) {
+      if (peer.closed || peer.blocked || peer.pc.connectionState !== "connected") continue;
+      let stats;
+      try {
+        stats = await peer.pc.getStats();
+      } catch {
+        continue;
+      }
+      if (peer.closed || peer.blocked) continue;
+
+      let pair = null;
+      stats.forEach((report) => {
+        if (report.type === "transport" && report.selectedCandidatePairId) {
+          pair = stats.get(report.selectedCandidatePairId) ?? pair;
+        }
+      });
+      if (!pair) {
+        // Firefox não tem o relatório "transport".
+        stats.forEach((report) => {
+          if (report.type === "candidate-pair" && (report.selected || (report.nominated && report.state === "succeeded"))) {
+            pair = report;
+          }
+        });
+      }
+      if (!pair) continue;
+
+      const viaLocalRelay = stats.get(pair.localCandidateId)?.candidateType === "relay";
+      const relayed = viaLocalRelay || stats.get(pair.remoteCandidateId)?.candidateType === "relay";
+
+      const received = pair.bytesReceived ?? 0;
+      if (peer.statsPairId !== pair.id) {
+        peer.statsPairId = pair.id;
+        peer.statsBytes = 0;
+      }
+      if (viaLocalRelay) this.turnBytes += Math.max(0, received - peer.statsBytes);
+      peer.statsBytes = received;
+
+      if (relayed && this.turnLimited) {
+        this.blockPeer(peer);
+      } else if (relayed !== peer.relayed) {
+        peer.relayed = relayed;
+        this.applyVideoEncoding(peer);
+        this.changed();
+      }
+    }
+    if (++this.statsTicks % STATS_PER_REPORT === 0) this.reportTurnUsage();
+  }
+
+  reportTurnUsage() {
+    if (this.turnBytes > 0 && this.sid) this.socket.emit("turn:usage", { bytes: this.turnBytes });
+    this.turnBytes = 0;
+  }
+
+  // O servidor avisou que a franquia mensal do TURN acabou: encerra as conexões que
+  // passam por ele. Quem conecta direto não é afetado.
+  handleTurnLimit() {
+    this.turnLimited = true;
+    for (const peer of [...this.peers.values()]) {
+      if (peer.relayed) this.blockPeer(peer);
+    }
+    this.changed();
+  }
+
+  // Fecha a conexão mas mantém a pessoa na tela, com o aviso do motivo.
+  blockPeer(peer) {
+    if (peer.closed || peer.blocked) return;
+    peer.blocked = true;
+    peer.gaveUp = true;
+    this.stopWatching(peer);
+    peer.pc.onconnectionstatechange = null;
+    peer.pc.onnegotiationneeded = null;
+    peer.pc.close();
+    this.unwatchSpeaking(peer.id);
+    this.changed();
+  }
+
   // --- Conexões com cada participante -------------------------------------------
 
   createPeer(id, remoteSid, initiator) {
@@ -468,6 +591,10 @@ export class VoiceEngine {
       restarts: 0,
       since: 0,
       gaveUp: false,
+      relayed: false,
+      blocked: false,
+      statsPairId: null,
+      statsBytes: 0,
       slowTimer: null,
       giveUpTimer: null,
       queue: Promise.resolve(),
@@ -590,7 +717,7 @@ export class VoiceEngine {
 
   async applySignal(peer, data) {
     const { pc } = peer;
-    if (peer.closed) return;
+    if (peer.closed || peer.blocked) return;
 
     if (data.description) {
       await pc.setRemoteDescription(data.description);

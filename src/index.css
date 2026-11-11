@@ -383,6 +383,48 @@ textarea {
   font-weight: 600;
 }
 
+.turn-alert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 12px;
+  background: var(--warning);
+  color: #1b1b1b;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.turn-alert.is-blocked {
+  background: var(--danger);
+  color: #fff;
+}
+
+.turn-alert svg {
+  flex-shrink: 0;
+}
+
+.turn-alert span {
+  flex: 1;
+  min-width: 0;
+}
+
+.turn-alert-close {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.turn-alert-close:hover {
+  background: rgb(0 0 0 / 0.15);
+}
+
 /* ---------- Barra lateral ---------- */
 
 .sidebar {

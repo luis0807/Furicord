@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Copy, KeyRound, LoaderCircle } from "lucide-react";
+import { Copy, KeyRound, LoaderCircle, TriangleAlert, X } from "lucide-react";
 import { useChat } from "../state/chat-context.js";
 import { cls } from "../lib/cls.js";
 import { getToken } from "../lib/identity.js";
@@ -41,6 +41,7 @@ export default function AppShell() {
               <LoaderCircle size={14} className="spin" /> Conexão perdida. Reconectando…
             </div>
           )}
+          <TurnAlertBanner alert={state.turnAlert} />
           {textChannel && <ChannelView key={textChannel.id} channel={textChannel} layout={layout} />}
           {voiceChannel && <VoiceView key={voiceChannel.id} channel={voiceChannel} layout={layout} />}
         </main>
@@ -58,6 +59,46 @@ export default function AppShell() {
       </div>
       {state.self.isNew && !codeSaved && <AccessCodeDialog name={state.self.name} onClose={() => setCodeSaved(true)} />}
     </OverlayProvider>
+  );
+}
+
+// Consumo do servidor de retransmissão de voz (TURN), que tem franquia mensal. Aparece
+// ao passar de cada alerta (500 GB, 700 GB) e ao atingir o limite. Fechar vale só para
+// aquele alerta: o próximo aparece de novo.
+const TURN_ALERT_KEY = "furicord.turnAlertSeen";
+
+function TurnAlertBanner({ alert }) {
+  const id = alert ? `${alert.month}:${alert.blocked ? "limite" : alert.alertGB}` : null;
+  const [seen, setSeen] = useState(() => {
+    try {
+      return localStorage.getItem(TURN_ALERT_KEY);
+    } catch {
+      return null;
+    }
+  });
+  if (!alert || seen === id) return null;
+
+  function dismiss() {
+    setSeen(id);
+    try {
+      localStorage.setItem(TURN_ALERT_KEY, id);
+    } catch {
+      // sem armazenamento: fica fechado só até recarregar
+    }
+  }
+
+  return (
+    <div className={cls("turn-alert", alert.blocked && "is-blocked")} role="alert">
+      <TriangleAlert size={16} />
+      <span>
+        {alert.blocked
+          ? `O limite mensal do servidor de voz acabou (${alert.limitGB} GB). Até o dia 1º, quem não consegue conexão direta fica sem voz e sem tela.`
+          : `O servidor de voz já passou de ${alert.alertGB} GB neste mês (${Math.round(alert.usedGB)} de ${alert.limitGB} GB). Ao chegar no limite, parte das chamadas para de conectar até o dia 1º.`}
+      </span>
+      <button type="button" className="turn-alert-close" onClick={dismiss} aria-label="Fechar aviso" title="Fechar aviso">
+        <X size={16} />
+      </button>
+    </div>
   );
 }
 

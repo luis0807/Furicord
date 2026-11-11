@@ -12,17 +12,6 @@ export function fetchMessages(channelId, before) {
   return request(`/channels/${encodeURIComponent(channelId)}/messages${query}`);
 }
 
-export async function fetchIceServers() {
-  try {
-    // Com prazo: o servidor gratuito pode estar acordando, e sem isso a entrada na
-    // sala ficaria em "Conectando…" esperando. Sem resposta, entra só com STUN.
-    const data = await request("/ice", { signal: AbortSignal.timeout(8000) });
-    return data.iceServers;
-  } catch {
-    return [{ urls: "stun:stun.l.google.com:19302" }];
-  }
-}
-
 // Confere se o nome está livre, já entrou neste navegador (um dos `tokens`) ou tem
 // outro dono.
 export function checkName(name, tokens, signal) {

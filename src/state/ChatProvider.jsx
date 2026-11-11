@@ -85,6 +85,7 @@ export function ChatProvider({ login, onIdentity, onRejected, onLogout, children
     });
     client.on("presence", (users) => dispatch({ type: "presence", users }));
     client.on("voice:state", (voice) => dispatch({ type: "voice", voice }));
+    client.on("turn:alert", (alert) => dispatch({ type: "turnAlert", alert }));
     client.on("message:new", (message) => {
       // Igual ao Discord: não toca se você está olhando para esse canal agora.
       const { self, view } = stateRef.current;

@@ -19,6 +19,27 @@ export const CLOUDFLARE_TURN =
     ? { keyId: process.env.CLOUDFLARE_TURN_KEY_ID.trim(), apiToken: process.env.CLOUDFLARE_TURN_API_TOKEN.trim() }
     : null;
 
+// Teto mensal do TURN da Cloudflare, em GB. A franquia grátis é de 1.000 GB por mês;
+// o padrão fica abaixo para sobrar margem. Ao chegar nele, o TURN é desligado até o
+// mês virar (quem conecta direto continua falando normalmente).
+export const TURN_MONTHLY_LIMIT_GB = Number(process.env.TURN_MONTHLY_LIMIT_GB) > 0 ? Number(process.env.TURN_MONTHLY_LIMIT_GB) : 900;
+
+// Alertas de consumo do TURN, em GB, separados por vírgula. Ao passar de cada um, o
+// servidor avisa no log e o app mostra uma faixa de aviso para quem está online.
+export const TURN_ALERT_GB = (process.env.TURN_ALERT_GB || "500,700")
+  .split(",")
+  .map(Number)
+  .filter((gb) => gb > 0 && gb < TURN_MONTHLY_LIMIT_GB)
+  .sort((a, b) => a - b);
+
+// Opcional: deixa o servidor conferir o uso oficial do mês na Cloudflare, em vez de
+// confiar só na conta feita pelos navegadores. O token precisa da permissão
+// "Account Analytics: Read" (é outro token, não o da chave TURN).
+export const CLOUDFLARE_ANALYTICS =
+  process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_ANALYTICS_TOKEN
+    ? { accountId: process.env.CLOUDFLARE_ACCOUNT_ID.trim(), apiToken: process.env.CLOUDFLARE_ANALYTICS_TOKEN.trim() }
+    : null;
+
 export const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
 export const MAX_MESSAGE_LENGTH = 2000;
 export const MAX_ATTACHMENTS = 10;

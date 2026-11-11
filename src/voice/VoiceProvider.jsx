@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { fetchIceServers } from "../lib/api.js";
 import { playSound, setSoundsSilenced } from "../lib/sounds.js";
 import { loadStreamQuality } from "../lib/streamQuality.js";
 import { useChat } from "../state/chat-context.js";
@@ -19,6 +18,7 @@ const IDLE_SNAPSHOT = {
   screenStream: null,
   streamQuality: loadStreamQuality(),
   error: null,
+  turnLimited: false,
   speaking: new Set(),
   peers: {},
 };
@@ -34,7 +34,7 @@ export function VoiceProvider({ children }) {
 
   useEffect(() => {
     if (!socket) return;
-    const instance = new VoiceEngine(socket, fetchIceServers);
+    const instance = new VoiceEngine(socket);
     setEngine(instance);
     if (import.meta.env.DEV) window.__furicordVoice = instance; // facilita depurar pelo console
     return () => {

@@ -81,7 +81,7 @@ export function ChatProvider({ login, onIdentity, onRejected, onLogout, children
       dispatch({ type: "renamed", name });
     });
     client.on("account:deleted", () => {
-      callbacks.current.onRejected("Esta conta foi excluída em outra aba.", "DELETED");
+      callbacks.current.onRejected("Esta conta foi excluída (em outra aba ou outro aparelho).", "DELETED");
     });
     client.on("presence", (users) => dispatch({ type: "presence", users }));
     client.on("voice:state", (voice) => dispatch({ type: "voice", voice }));

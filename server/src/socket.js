@@ -13,6 +13,9 @@ import { cleanToken, clientIp, hashToken } from "./lib/accounts.js";
 // Lista de membros: quantas contas offline ficam guardadas e quantas aparecem.
 const MAX_LOADED_ACCOUNTS = 1000;
 const MAX_OFFLINE_LISTED = 200;
+// De quanto em quanto tempo a lista é conferida com o banco (contas excluídas,
+// criadas ou renomeadas fora deste servidor).
+const REFRESH_MS = 30_000;
 
 /*
  * Conexão: auth { token, name?, resume?, profile? }
@@ -39,7 +42,7 @@ const MAX_OFFLINE_LISTED = 200;
  * Eventos (servidor -> cliente)
  *   session      { self: { id, name, isNew }, channels, users, voice }   (após conectar/reconectar)
  *   account:renamed { name }    (para todas as abas da conta)
- *   account:deleted             (para as outras abas, antes de desconectar)
+ *   account:deleted             (para as outras abas, ou se a conta for excluída fora daqui)
  *   presence     [{ name, profile, online }]   (contas online e as offline mais recentes)
  *   voice:state  [{ id, sid, name, channelId, muted, deafened, sharing }]
  *   message:new  message
@@ -59,36 +62,13 @@ export function attachSocket(httpServer) {
   // A mesma conta pode estar em várias abas (sockets) ao mesmo tempo.
   const users = new Map();
   // Quem não está online: nome em minúsculas -> { name, profile, lastSeenAt }.
-  // Vem do banco ao ligar e é mantido aqui (quem sai entra, quem volta sai).
-  const offline = new Map();
+  // Vem do banco (refreshMembers) e é mantido aqui entre uma conferência e outra.
+  let offline = new Map();
+  // Contas excluídas aqui durante uma conferência do banco: a leitura pode ter sido
+  // feita antes da exclusão e não pode trazê-las de volta.
+  const deletedKeys = new Set();
   // socket.id -> participante de voz. Cada aba conta como um participante.
   const voice = new Map();
-
-  // Carrega as contas do banco uma vez. Se falhar, tenta de novo na próxima conexão
-  // (sem impedir ninguém de entrar).
-  let offlineLoad = null;
-  const loadOffline = () => {
-    offlineLoad ??= User.find({}, { name: 1, nameKey: 1, profile: 1, lastSeenAt: 1 })
-      .sort({ lastSeenAt: -1 })
-      .limit(MAX_LOADED_ACCOUNTS)
-      .lean()
-      .then((docs) => {
-        for (const doc of docs) {
-          if (users.has(doc.nameKey) || offline.has(doc.nameKey)) continue;
-          offline.set(doc.nameKey, {
-            name: doc.name,
-            profile: doc.profile ?? null,
-            lastSeenAt: doc.lastSeenAt?.getTime() ?? 0,
-          });
-        }
-      })
-      .catch((err) => {
-        console.error("Erro ao carregar a lista de membros:", err);
-        offlineLoad = null;
-      });
-    return offlineLoad;
-  };
-  loadOffline();
 
   const allowMessage = createRateLimiter({ windowMs: 5000, max: 5 });
   const allowProfile = createRateLimiter({ windowMs: 10_000, max: 5 });
@@ -110,11 +90,58 @@ export function attachSocket(httpServer) {
   const broadcastPresence = () => io.emit("presence", listUsers());
   const broadcastVoice = () => io.emit("voice:state", listVoice());
 
+  // Confere a lista de membros com o banco. Necessário porque contas podem ser
+  // criadas, renomeadas ou excluídas fora deste processo: pelo site publicado (outro
+  // servidor usando o mesmo banco) ou direto no painel do MongoDB.
+  let refreshing = null;
+  const refreshMembers = () => {
+    refreshing ??= (async () => {
+      deletedKeys.clear();
+      const docs = await User.find({}, { name: 1, nameKey: 1, profile: 1, lastSeenAt: 1 })
+        .sort({ lastSeenAt: -1 })
+        .limit(MAX_LOADED_ACCOUNTS)
+        .lean();
+      const onlineIds = [...users.values()].map((user) => user.userId);
+      const alive = new Set(
+        (await User.find({ _id: { $in: onlineIds } }, { _id: 1 }).lean()).map((doc) => String(doc._id)),
+      );
+
+      const before = JSON.stringify(listUsers());
+      const next = new Map();
+      for (const doc of docs) {
+        if (users.has(doc.nameKey) || deletedKeys.has(doc.nameKey)) continue;
+        next.set(doc.nameKey, { name: doc.name, profile: doc.profile ?? null, lastSeenAt: doc.lastSeenAt?.getTime() ?? 0 });
+      }
+      offline = next;
+
+      // Conta excluída em outro lugar com alguém online nela: derruba as abas.
+      for (const owner of users.values()) {
+        if (!onlineIds.includes(owner.userId) || alive.has(owner.userId)) continue;
+        owner.deleted = true;
+        for (const id of [...owner.sockets]) {
+          const tab = io.sockets.sockets.get(id);
+          if (!tab) continue;
+          tab.emit("account:deleted");
+          tab.disconnect();
+        }
+      }
+
+      if (JSON.stringify(listUsers()) !== before) broadcastPresence();
+    })()
+      .catch((err) => console.error("Erro ao conferir a lista de membros:", err))
+      .finally(() => {
+        refreshing = null;
+      });
+    return refreshing;
+  };
+  const firstLoad = refreshMembers(); // as primeiras conexões esperam por ela
+  setInterval(refreshMembers, REFRESH_MS).unref();
+
   // Identifica quem está chegando. Com conta (código já conhecido), vale o nome
   // salvo no banco. Sem conta, cria uma — e o nome fica reservado para este navegador.
   io.use(async (socket, next) => {
     try {
-      await loadOffline(); // só espera de verdade na primeira conexão
+      await firstLoad; // só espera de verdade logo que o servidor liga
       const auth = socket.handshake.auth ?? {};
       const token = cleanToken(auth.token);
       if (!token) return next(new Error("INVALID_TOKEN"));
@@ -270,6 +297,7 @@ export function attachSocket(httpServer) {
       }
       respond({ ok: true });
       owner.deleted = true; // ao desconectar, não vai para a lista de offline
+      deletedKeys.add(socket.data.key);
       // Derruba todas as abas desta conta; o nome fica livre para outra pessoa.
       for (const id of [...owner.sockets]) {
         const tab = io.sockets.sockets.get(id);

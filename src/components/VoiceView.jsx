@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useChat } from "../state/chat-context.js";
 import { useIsSpeaking, useVoice } from "../voice/voice-context.js";
+import { CONNECT_TIMEOUT_MS, SLOW_CONNECT_MS } from "../voice/VoiceEngine.js";
 import { colorFor } from "../lib/avatar.js";
 import { listNames } from "../lib/format.js";
 import { cls } from "../lib/cls.js";
@@ -102,7 +103,9 @@ function VoiceStage({ participants }) {
       participant={tile.participant}
       isSelf={tile.isSelf}
       speaking={isSpeaking(tile.participant.id)}
-      connectionState={tile.isSelf ? "connected" : peerStatus(voice.peers[tile.participant.id])}
+      connectionState={
+        tile.isSelf ? "connected" : peerStatus(voice.peers[tile.participant.id], voice.waitingSince[tile.participant.id])
+      }
     />
   );
   const renderScreen = (tile) => (
@@ -152,7 +155,14 @@ const CONNECTION_LABELS = {
   failed: "Não conectou — a rede bloqueou a chamada. Saia e entre de novo para tentar.",
 };
 
-const peerStatus = (peer) => (peer?.slow ? "slow" : peer?.connectionState);
+// Mesmos prazos das conexões já criadas (VoiceEngine).
+function peerStatus(peer, waitingSince) {
+  if (peer) return peer.slow ? "slow" : peer.connectionState;
+  // Ainda não chegou nem a oferta de conexão dessa pessoa.
+  const waited = waitingSince ? Date.now() - waitingSince : 0;
+  if (waited > CONNECT_TIMEOUT_MS) return "failed";
+  return waited > SLOW_CONNECT_MS ? "slow" : "new";
+}
 
 function PersonTile({ participant, isSelf, speaking, connectionState }) {
   const status = isSelf || connectionState === "connected" ? null : (CONNECTION_LABELS[connectionState] ?? "Conectando…");

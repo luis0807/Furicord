@@ -9,6 +9,8 @@ import { VoiceEngine } from "./VoiceEngine.js";
 const IDLE_SNAPSHOT = {
   channelId: null,
   joiningChannelId: null,
+  waitingMic: false,
+  waitingSince: {},
   reconnecting: false,
   muted: false,
   deafened: false,

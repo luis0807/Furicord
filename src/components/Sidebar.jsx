@@ -144,6 +144,7 @@ function VoicePanel() {
 
   let status = "Voz conectada";
   if (voice.reconnecting) status = "Reconectando…";
+  else if (voice.waitingMic) status = "Permita o microfone…";
   else if (!voice.channelId) status = "Conectando…";
   const ok = Boolean(voice.channelId) && !voice.reconnecting;
 

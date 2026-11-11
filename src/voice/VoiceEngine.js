@@ -31,9 +31,9 @@ const SPEAKING_HOLD_MS = 300;
 // Quantas vezes seguidas tenta religar uma conexão que falhou.
 const MAX_ICE_RESTARTS = 1;
 // A partir de quando "Conectando…" vira um aviso de que algo está errado...
-const SLOW_CONNECT_MS = 12_000;
+export const SLOW_CONNECT_MS = 12_000;
 // ...e quando desiste (ou religa uma vez, se for quem começou a conexão).
-const CONNECT_TIMEOUT_MS = 25_000;
+export const CONNECT_TIMEOUT_MS = 25_000;
 
 export class VoiceEngine {
   listeners = new Set();
@@ -60,6 +60,8 @@ export class VoiceEngine {
   audioContext = null;
   speakingTimer = null;
   destroyed = false;
+  waitingMic = false;
+  waitingSince = new Map();
 
   constructor(socket, getIceServers) {
     this.socket = socket;
@@ -107,6 +109,9 @@ export class VoiceEngine {
     return {
       channelId: this.channelId,
       joiningChannelId: this.pendingChannelId,
+      waitingMic: this.waitingMic,
+      // Pessoas da sala com quem ainda não existe conexão nenhuma: id -> desde quando.
+      waitingSince: Object.fromEntries(this.waitingSince),
       reconnecting: Boolean(this.rejoinChannelId),
       muted: this.muted,
       deafened: this.deafened,
@@ -140,7 +145,13 @@ export class VoiceEngine {
 
     try {
       this.ensureAudioContext();
-      if (!this.micStream) await this.openMic();
+      if (!this.micStream) {
+        this.waitingMic = true; // a pessoa pode estar com o pedido de permissão aberto
+        this.changed();
+        await this.openMic().finally(() => {
+          this.waitingMic = false;
+        });
+      }
       if (cancelled()) return;
 
       // A cada entrada: as credenciais do TURN são temporárias.
@@ -192,6 +203,7 @@ export class VoiceEngine {
     this.pendingChannelId = null;
     this.rejoinChannelId = null;
     for (const id of [...this.peers.keys()]) this.closePeer(id, { silent: true });
+    this.waitingSince.clear();
     this.channelId = null;
     this.sid = null;
     this.stopScreenShare({ silent: true });
@@ -207,6 +219,7 @@ export class VoiceEngine {
     this.joinToken = null;
     this.pendingChannelId = null;
     for (const id of [...this.peers.keys()]) this.closePeer(id, { silent: true });
+    this.waitingSince.clear();
     this.channelId = null;
     this.sid = null;
     this.rejoinChannelId = channelId;
@@ -230,6 +243,20 @@ export class VoiceEngine {
     for (const [id, peer] of this.peers) {
       if (present.get(id) !== peer.remoteSid) this.closePeer(id);
     }
+    // Quem chegou depois manda a oferta; enquanto ela não vem, não há conexão para
+    // acompanhar. Anota desde quando, para a tela também não esperar para sempre.
+    let changed = false;
+    for (const id of this.waitingSince.keys()) {
+      if (!present.has(id) || this.peers.has(id)) changed = this.waitingSince.delete(id);
+    }
+    for (const id of present.keys()) {
+      if (this.peers.has(id) || this.waitingSince.has(id)) continue;
+      this.waitingSince.set(id, Date.now());
+      changed = true;
+      setTimeout(() => this.changed(), SLOW_CONNECT_MS + 100);
+      setTimeout(() => this.changed(), CONNECT_TIMEOUT_MS + 100);
+    }
+    if (changed) this.changed();
   }
 
   destroy() {
@@ -450,6 +477,7 @@ export class VoiceEngine {
       screenAudioStream: null,
     };
     this.peers.set(id, peer);
+    this.waitingSince.delete(id);
 
     pc.onicecandidate = ({ candidate }) => {
       if (candidate) this.signal(peer, { candidate: candidate.toJSON() });

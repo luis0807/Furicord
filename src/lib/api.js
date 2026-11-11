@@ -14,7 +14,9 @@ export function fetchMessages(channelId, before) {
 
 export async function fetchIceServers() {
   try {
-    const data = await request("/ice");
+    // Com prazo: o servidor gratuito pode estar acordando, e sem isso a entrada na
+    // sala ficaria em "Conectando…" esperando. Sem resposta, entra só com STUN.
+    const data = await request("/ice", { signal: AbortSignal.timeout(8000) });
     return data.iceServers;
   } catch {
     return [{ urls: "stun:stun.l.google.com:19302" }];

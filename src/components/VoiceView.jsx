@@ -18,7 +18,7 @@ import { useIsSpeaking, useVoice } from "../voice/voice-context.js";
 import { colorFor } from "../lib/avatar.js";
 import { listNames } from "../lib/format.js";
 import { cls } from "../lib/cls.js";
-import { Avatar, IconButton } from "./ui.jsx";
+import { Avatar, IconButton, UserName } from "./ui.jsx";
 import ChannelHeader from "./ChannelHeader.jsx";
 
 export default function VoiceView({ channel, layout }) {
@@ -161,7 +161,7 @@ function PersonTile({ participant, isSelf, speaking, connectionState }) {
       <div className="tile-label">
         {participant.deafened ? <HeadphoneOff size={14} /> : participant.muted && <MicOff size={14} />}
         <span>
-          {participant.name}
+          <UserName name={participant.name} />
           {isSelf && " (você)"}
         </span>
       </div>

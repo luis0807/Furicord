@@ -3,7 +3,9 @@ import { io } from "socket.io-client";
 import { SERVER_URL } from "../lib/config.js";
 import { fetchMessages } from "../lib/api.js";
 import { getClientId, getSavedView, saveView } from "../lib/identity.js";
-import { ChatContext } from "./chat-context.js";
+import { playSound } from "../lib/sounds.js";
+import { loadProfile, saveProfile } from "../lib/profile.js";
+import { ChatContext, ProfilesContext } from "./chat-context.js";
 import { TYPING_TTL_MS, chatReducer, createInitialState } from "./chatReducer.js";
 
 const REJECTIONS = {
@@ -29,7 +31,7 @@ export function ChatProvider({ name, onRejected, onLogout, children }) {
   const inflight = useRef(new Set());
 
   useEffect(() => {
-    const options = { auth: { name, clientId: getClientId() } };
+    const options = { auth: { name, clientId: getClientId(), profile: loadProfile() } };
     const client = SERVER_URL ? io(SERVER_URL, options) : io(options);
 
     client.on("session", (session) => dispatch({ type: "session", session }));
@@ -41,7 +43,13 @@ export function ChatProvider({ name, onRejected, onLogout, children }) {
     });
     client.on("presence", (users) => dispatch({ type: "presence", users }));
     client.on("voice:state", (voice) => dispatch({ type: "voice", voice }));
-    client.on("message:new", (message) => dispatch({ type: "message", message }));
+    client.on("message:new", (message) => {
+      // Igual ao Discord: não toca se você está olhando para esse canal agora.
+      const { self, view } = stateRef.current;
+      const watching = view?.type === "text" && view.id === message.channelId && document.hasFocus();
+      if (message.author !== self?.name && !watching) playSound("message");
+      dispatch({ type: "message", message });
+    });
     client.on("typing", ({ channelId, name: who }) =>
       dispatch({ type: "typing", channelId, name: who, until: Date.now() + TYPING_TTL_MS }),
     );
@@ -106,10 +114,35 @@ export function ChatProvider({ name, onRejected, onLogout, children }) {
     callbacks.current.onLogout();
   }, [socket]);
 
-  const value = useMemo(
-    () => ({ state, socket, loadMessages, sendMessage, emitTyping, setView, logout }),
-    [state, socket, loadMessages, sendMessage, emitTyping, setView, logout],
+  // Salva neste navegador e avisa o servidor, que repassa para todo mundo.
+  const updateProfile = useCallback(
+    async (profile) => {
+      saveProfile(profile);
+      // Se a conexão cair, a reconexão já leva o perfil novo.
+      if (socket) socket.auth = { ...socket.auth, profile };
+      if (!socket?.connected) return { ok: true };
+      try {
+        return await socket.timeout(10_000).emitWithAck("profile:update", profile);
+      } catch {
+        return { error: "O servidor não respondeu. Tente de novo." };
+      }
+    },
+    [socket],
   );
 
-  return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
+  const value = useMemo(
+    () => ({ state, socket, loadMessages, sendMessage, emitTyping, setView, logout, updateProfile }),
+    [state, socket, loadMessages, sendMessage, emitTyping, setView, logout, updateProfile],
+  );
+
+  const profiles = useMemo(
+    () => new Map(state.users.map((user) => [user.name, user.profile ?? null])),
+    [state.users],
+  );
+
+  return (
+    <ChatContext.Provider value={value}>
+      <ProfilesContext.Provider value={profiles}>{children}</ProfilesContext.Provider>
+    </ChatContext.Provider>
+  );
 }

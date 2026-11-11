@@ -20,6 +20,9 @@ const messageSchema = new mongoose.Schema(
     author: { type: String, required: true },
     content: { type: String, default: "" },
     attachments: { type: [attachmentSchema], default: [] },
+    // Avatar/estilo do nome/decoração de quem escreveu, no momento do envio
+    // (já validado por lib/profile.js). Mensagens antigas ficam com null.
+    authorProfile: { type: mongoose.Schema.Types.Mixed, default: null },
   },
   { timestamps: { createdAt: true, updatedAt: false }, versionKey: false },
 );
@@ -34,6 +37,7 @@ export function serializeMessage(doc) {
     id: String(doc._id),
     channelId: doc.channelId,
     author: doc.author,
+    authorProfile: doc.authorProfile ?? null,
     content: doc.content,
     attachments: (doc.attachments || []).map((attachment) => ({
       id: String(attachment.upload),

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { fetchIceServers } from "../lib/api.js";
+import { playSound, setSoundsSilenced } from "../lib/sounds.js";
+import { loadStreamQuality } from "../lib/streamQuality.js";
 import { useChat } from "../state/chat-context.js";
 import { VoiceContext } from "./voice-context.js";
 import { VoiceEngine } from "./VoiceEngine.js";
@@ -13,6 +15,7 @@ const IDLE_SNAPSHOT = {
   hasMic: false,
   micError: null,
   screenStream: null,
+  streamQuality: loadStreamQuality(),
   error: null,
   speaking: new Set(),
   peers: {},
@@ -47,6 +50,8 @@ export function VoiceProvider({ children }) {
     engine ? engine.getSnapshot : getIdleSnapshot,
   );
 
+  useVoiceSounds(snapshot, state.voice, state.self?.id);
+
   const value = useMemo(
     () => ({
       ...snapshot,
@@ -54,10 +59,18 @@ export function VoiceProvider({ children }) {
       supportsScreenShare,
       join: (channelId) => engine?.join(channelId),
       leave: () => engine?.leave(),
-      setMuted: (muted) => engine?.setMuted(muted),
-      setDeafened: (deafened) => engine?.setDeafened(deafened),
+      // `always`: o retorno do próprio botão toca mesmo ensurdecido.
+      setMuted: (muted) => {
+        playSound(muted ? "mute" : "unmute", { always: true });
+        engine?.setMuted(muted);
+      },
+      setDeafened: (deafened) => {
+        playSound(deafened ? "deafen" : "undeafen", { always: true });
+        engine?.setDeafened(deafened);
+      },
       startScreenShare: () => engine?.startScreenShare(),
       stopScreenShare: () => engine?.stopScreenShare(),
+      setStreamQuality: (quality) => engine?.setStreamQuality(quality),
     }),
     [snapshot, engine, state.self?.id],
   );
@@ -74,6 +87,54 @@ export function VoiceProvider({ children }) {
       </div>
     </VoiceContext.Provider>
   );
+}
+
+// Sons da sala: compara quem está na sua sala agora com a atualização anterior.
+function useVoiceSounds(snapshot, entries, selfId) {
+  const { channelId, joiningChannelId, reconnecting, deafened } = snapshot;
+  const sharing = Boolean(snapshot.screenStream);
+  const previous = useRef(null);
+
+  useEffect(() => setSoundsSilenced(deafened), [deafened]);
+
+  useEffect(() => {
+    // Os outros que estão na mesma sala que você -> se estão transmitindo.
+    const room = new Map();
+    if (channelId) {
+      for (const entry of entries) {
+        if (entry.channelId === channelId && entry.id !== selfId) room.set(entry.id, entry.sharing);
+      }
+    }
+    const before = previous.current;
+    previous.current = { channelId, room, sharing };
+    if (!before) return;
+
+    if (channelId !== before.channelId) {
+      if (channelId) playSound("connect");
+      // Trocar de sala (já entrando em outra) ou queda de conexão não contam como sair.
+      else if (!joiningChannelId && !reconnecting) playSound("disconnect");
+      return;
+    }
+    if (!channelId) return;
+
+    let joined = false;
+    let left = false;
+    let streamStarted = sharing && !before.sharing;
+    let streamStopped = !sharing && before.sharing;
+    for (const [id, isSharing] of room) {
+      if (!before.room.has(id)) joined = true;
+      else if (isSharing && !before.room.get(id)) streamStarted = true;
+      else if (!isSharing && before.room.get(id)) streamStopped = true;
+    }
+    for (const id of before.room.keys()) {
+      if (!room.has(id)) left = true;
+    }
+
+    if (joined) playSound("userJoin");
+    else if (left) playSound("userLeave");
+    if (streamStarted) playSound("streamStart");
+    else if (streamStopped) playSound("streamStop");
+  }, [channelId, joiningChannelId, reconnecting, sharing, entries, selfId]);
 }
 
 function PeerAudio({ peer, muted }) {

@@ -1,10 +1,11 @@
 import { Fragment, memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Hash, ImageOff, LoaderCircle } from "lucide-react";
-import { useChat } from "../state/chat-context.js";
+import { useChat, useProfile } from "../state/chat-context.js";
 import { uploadUrl } from "../lib/config.js";
 import { formatDay, formatTime, formatTimestamp, isSameDay } from "../lib/format.js";
 import { cls } from "../lib/cls.js";
-import { Avatar } from "./ui.jsx";
+import { useOverlays } from "./overlay-context.js";
+import { Avatar, UserName } from "./ui.jsx";
 
 const GROUP_WINDOW_MS = 7 * 60 * 1000;
 const NEAR_BOTTOM_PX = 120;
@@ -129,6 +130,11 @@ export default function MessageList({ channel, entry, onOpenImage, onLoadOlder, 
 }
 
 const MessageItem = memo(function MessageItem({ message, grouped, selfName, onOpenImage }) {
+  const { openProfile } = useOverlays();
+  // Quem está online aparece com o perfil de agora; quem saiu, com o gravado na mensagem.
+  const live = useProfile(message.author);
+  const profile = live ?? message.authorProfile ?? null;
+  const showProfile = (event) => openProfile(message.author, event, message.authorProfile ?? null);
   const mentioned =
     selfName && message.author !== selfName && message.content.toLocaleLowerCase("pt-BR").includes(`@${selfName.toLocaleLowerCase("pt-BR")}`);
 
@@ -139,12 +145,21 @@ const MessageItem = memo(function MessageItem({ message, grouped, selfName, onOp
           {formatTime(message.createdAt)}
         </time>
       ) : (
-        <Avatar name={message.author} size={40} className="message-avatar" />
+        <button
+          type="button"
+          className="avatar-button message-avatar"
+          onClick={showProfile}
+          aria-label={`Ver perfil de ${message.author}`}
+        >
+          <Avatar name={message.author} profile={profile} size={40} />
+        </button>
       )}
       <div className="message-body">
         {!grouped && (
           <header className="message-header">
-            <span className="message-author">{message.author}</span>
+            <button type="button" className="plain-button message-author" onClick={showProfile}>
+              <UserName name={message.author} profile={profile} />
+            </button>
             <time
               className="message-time"
               dateTime={message.createdAt}

@@ -11,6 +11,14 @@ export const CORS_ORIGIN = parseOrigins(process.env.CORS_ORIGIN);
 // [{"urls":"stun:stun.l.google.com:19302"},{"urls":"turn:host:3478","username":"u","credential":"s"}]
 export const ICE_SERVERS = parseIceServers(process.env.ICE_SERVERS);
 
+// TURN da Cloudflare (recomendado): o servidor gera credenciais temporárias sozinho.
+// Painel da Cloudflare -> Realtime -> TURN Server -> criar chave: copie o Turn Token ID
+// e o API Token. Com os dois preenchidos, ICE_SERVERS é usado só se a Cloudflare falhar.
+export const CLOUDFLARE_TURN =
+  process.env.CLOUDFLARE_TURN_KEY_ID && process.env.CLOUDFLARE_TURN_API_TOKEN
+    ? { keyId: process.env.CLOUDFLARE_TURN_KEY_ID.trim(), apiToken: process.env.CLOUDFLARE_TURN_API_TOKEN.trim() }
+    : null;
+
 export const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
 export const MAX_MESSAGE_LENGTH = 2000;
 export const MAX_ATTACHMENTS = 10;

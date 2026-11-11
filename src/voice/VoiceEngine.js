@@ -131,7 +131,8 @@ export class VoiceEngine {
       if (!this.micStream) await this.openMic();
       if (cancelled()) return;
 
-      this.iceServers ??= await this.getIceServers();
+      // A cada entrada: as credenciais do TURN são temporárias.
+      this.iceServers = await this.getIceServers();
       if (cancelled()) return;
 
       const sid = randomId();

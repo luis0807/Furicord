@@ -1,0 +1,21 @@
+# Dependências e build (o Vercel/Render instalam e compilam sozinhos)
+node_modules
+dist
+dist-ssr
+*.local
+
+# Credenciais — NUNCA versionar (a URI do MongoDB tem a senha)
+.env
+.env.*
+!.env.example
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Editor / sistema
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store

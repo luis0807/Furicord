@@ -1120,3 +1120,110 @@
     animation: none !important;
   }
 }
+
+/* ---------- Conta ---------- */
+
+.login-switch {
+  display: block;
+  margin: 16px auto 0;
+  font-size: 14px;
+}
+
+.code-input,
+.code-value {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+}
+
+.inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.inline-form .text-input {
+  flex: 1 1 220px;
+  width: auto;
+}
+
+.form-ok {
+  margin: 10px 0 0;
+  color: var(--success);
+  font-size: 14px;
+}
+
+.code-box {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.code-value {
+  flex: 1 1 260px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-app);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.code-value.is-hidden {
+  color: var(--text-faint);
+  letter-spacing: 0.1em;
+  user-select: none;
+}
+
+.danger-zone {
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+  border-radius: 10px;
+}
+
+.button-danger {
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.button-danger:hover:not(:disabled) {
+  background: #d93a4c;
+}
+
+.button-danger:disabled,
+.button-secondary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.account-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 8px 8px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--accent-soft);
+  color: var(--text-soft);
+  font-size: 14px;
+}
+
+.account-banner > svg {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.account-banner > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.account-banner .link-button {
+  flex-shrink: 0;
+}

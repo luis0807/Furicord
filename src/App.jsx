@@ -1,25 +1,37 @@
 import { useState } from "react";
-import { getSavedName, saveName } from "./lib/identity.js";
+import { clearToken, getSavedName, saveName, setToken } from "./lib/identity.js";
 import { ChatProvider } from "./state/ChatProvider.jsx";
 import { VoiceProvider } from "./voice/VoiceProvider.jsx";
 import LoginScreen from "./components/LoginScreen.jsx";
 import AppShell from "./components/AppShell.jsx";
 
+// Recusas em que o código deste navegador não serve mais: gera outro na próxima vez.
+const FORGET_TOKEN = new Set(["UNKNOWN_CODE", "INVALID_TOKEN", "DELETED"]);
+
 export default function App() {
-  const [name, setName] = useState(getSavedName);
+  // Já entrou antes neste navegador? Então conecta direto: o servidor reconhece o
+  // código de acesso e devolve o nome e o perfil da conta.
+  const [login, setLogin] = useState(() => {
+    const name = getSavedName();
+    return name ? { name } : null;
+  });
   const [draftName, setDraftName] = useState(() => getSavedName() ?? "");
   const [loginError, setLoginError] = useState(null);
 
-  if (!name) {
+  if (!login) {
     return (
       <LoginScreen
         initialName={draftName}
         error={loginError}
-        onSubmit={(chosen) => {
-          saveName(chosen);
+        onSubmitName={(chosen) => {
           setDraftName(chosen);
           setLoginError(null);
-          setName(chosen);
+          setLogin({ name: chosen });
+        }}
+        onSubmitCode={(code) => {
+          setToken(code);
+          setLoginError(null);
+          setLogin({ name: null });
         }}
       />
     );
@@ -27,16 +39,24 @@ export default function App() {
 
   return (
     <ChatProvider
-      name={name}
-      onRejected={(message) => {
+      login={login}
+      onIdentity={(name) => {
+        saveName(name);
+        setDraftName(name);
+      }}
+      onRejected={(message, code) => {
+        if (FORGET_TOKEN.has(code)) clearToken();
         saveName(null);
         setLoginError(message);
-        setName(null);
+        setLogin(null);
       }}
       onLogout={() => {
+        // Sair = este navegador esquece a conta. Para voltar, só com o código de acesso.
+        clearToken();
         saveName(null);
+        setDraftName("");
         setLoginError(null);
-        setName(null);
+        setLogin(null);
       }}
     >
       <VoiceProvider>

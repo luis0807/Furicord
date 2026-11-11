@@ -72,6 +72,9 @@ export function chatReducer(state, action) {
     case "presence":
       return { ...state, users: action.users };
 
+    case "renamed":
+      return state.self ? { ...state, self: { ...state.self, name: action.name } } : state;
+
     case "voice":
       return { ...state, voice: action.voice };
 

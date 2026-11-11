@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ImagePlus, LoaderCircle } from "lucide-react";
-import { useChat } from "../state/chat-context.js";
+import { useChat, useProfile } from "../state/chat-context.js";
 import { uploadImage } from "../lib/api.js";
 import { ALLOWED_IMAGE_TYPES, MAX_UPLOAD_BYTES } from "../lib/config.js";
 import { cls } from "../lib/cls.js";
@@ -12,7 +12,7 @@ import {
   NAME_FONTS,
   PROFILE_EFFECTS,
   PROFILE_THEME_PRESETS,
-  loadProfile,
+  normalizeProfile,
 } from "../lib/profile.js";
 import { Avatar, UserName } from "./ui.jsx";
 import ProfileCard from "./ProfileCard.jsx";
@@ -23,7 +23,9 @@ const sameColors = (a, b) => a?.[0] === b?.[0] && a?.[1] === b?.[1];
 export default function ProfileEditor({ onDirtyChange }) {
   const { state, updateProfile } = useChat();
   const name = state.self.name;
-  const [saved, setSaved] = useState(loadProfile);
+  // O perfil salvo na conta, como o servidor mandou na lista de quem está online.
+  const current = useProfile(name);
+  const [saved, setSaved] = useState(() => normalizeProfile(current));
   const [draft, setDraft] = useState(saved);
   const [busy, setBusy] = useState(null); // "avatar" | "banner" | "save"
   const [notice, setNotice] = useState(null); // { type: "error" | "ok", text }
@@ -70,7 +72,7 @@ export default function ProfileEditor({ onDirtyChange }) {
       return;
     }
     setSaved(draft);
-    setNotice({ type: "ok", text: "Perfil salvo! Todo mundo online já está vendo." });
+    setNotice({ type: "ok", text: "Perfil salvo na sua conta! Todo mundo online já está vendo." });
   }
 
   const effect = NAME_EFFECTS.find((item) => item.id === draft.nameStyle.effect) ?? NAME_EFFECTS[0];

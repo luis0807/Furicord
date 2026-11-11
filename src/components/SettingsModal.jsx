@@ -1,15 +1,20 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { LogOut, MonitorUp, Palette, UserRound, X } from "lucide-react";
+import { Copy, Eye, EyeOff, KeyRound, LogOut, MonitorUp, Palette, UserRound, X } from "lucide-react";
 import { useChat } from "../state/chat-context.js";
 import { useVoice } from "../voice/voice-context.js";
 import { cls } from "../lib/cls.js";
+import { getToken, normalizeName } from "../lib/identity.js";
 import { THEMES, applyTheme, loadTheme, resolveTheme, saveTheme } from "../lib/theme.js";
 import { STREAM_FPS, STREAM_RESOLUTIONS } from "../lib/streamQuality.js";
 import { getSoundsEnabled, playSound, setSoundsEnabled, subscribeSounds } from "../lib/sounds.js";
 import { IconButton } from "./ui.jsx";
 import ProfileEditor from "./ProfileEditor.jsx";
 
+const LOGOUT_WARNING =
+  "Sair desta conta neste navegador?\n\nPara voltar depois — aqui ou em outro aparelho — você vai precisar do código de acesso. Se ainda não copiou, cancele e copie na aba Conta.";
+
 const TABS = [
+  { id: "conta", label: "Conta", icon: KeyRound },
   { id: "perfil", label: "Perfil", icon: UserRound },
   { id: "aparencia", label: "Aparência", icon: Palette },
   { id: "voz", label: "Voz e vídeo", icon: MonitorUp },
@@ -56,8 +61,12 @@ export default function SettingsModal({ initialTab = "perfil", onClose }) {
             </button>
           ))}
           <hr />
-          <button type="button" className="settings-tab is-danger" onClick={() => confirmLeave() && logout()}>
-            <LogOut size={18} /> Sair (trocar de nome)
+          <button
+            type="button"
+            className="settings-tab is-danger"
+            onClick={() => confirmLeave() && window.confirm(LOGOUT_WARNING) && logout()}
+          >
+            <LogOut size={18} /> Sair
           </button>
         </nav>
 
@@ -76,11 +85,118 @@ export default function SettingsModal({ initialTab = "perfil", onClose }) {
                 }}
               />
             )}
+            {tab === "conta" && <AccountTab />}
             {tab === "aparencia" && <AppearanceTab />}
             {tab === "voz" && <VoiceTab />}
           </div>
         </section>
       </div>
+    </div>
+  );
+}
+
+// --- Conta --------------------------------------------------------------------
+
+function AccountTab() {
+  const { state, renameAccount, deleteAccount, logout } = useChat();
+  const [name, setName] = useState(state.self.name);
+  const [showCode, setShowCode] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState(null); // "rename" | "delete"
+  const [notice, setNotice] = useState(null); // { type, text }
+  const code = getToken();
+
+  const normalized = normalizeName(name);
+  const canRename = normalized && normalized !== state.self.name && busy === null;
+
+  async function rename(event) {
+    event.preventDefault();
+    if (!canRename) return;
+    setBusy("rename");
+    const result = await renameAccount(normalized);
+    setBusy(null);
+    setNotice(result?.ok ? { type: "ok", text: `Pronto! Agora você é ${result.name}.` } : { type: "error", text: result?.error });
+  }
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setShowCode(true); // sem acesso à área de transferência: mostra para copiar à mão
+    }
+  }
+
+  async function remove() {
+    const ok = window.confirm(
+      `Excluir a conta "${state.self.name}" para sempre?\n\nO nome fica livre para qualquer pessoa e o seu perfil é apagado. As mensagens que você já mandou continuam no histórico.`,
+    );
+    if (!ok) return;
+    setBusy("delete");
+    const result = await deleteAccount();
+    setBusy(null);
+    if (!result?.ok) setNotice({ type: "error", text: result?.error });
+  }
+
+  return (
+    <div className="settings-section-list">
+      <section>
+        <h3 className="field-label">Nome</h3>
+        <form className="inline-form" onSubmit={rename}>
+          <input
+            className="text-input"
+            value={name}
+            maxLength={40}
+            onChange={(event) => {
+              setName(event.target.value);
+              setNotice(null);
+            }}
+            aria-label="Nome"
+          />
+          <button type="submit" className="button-secondary" disabled={!canRename}>
+            {busy === "rename" ? "Salvando…" : "Trocar nome"}
+          </button>
+        </form>
+        {notice && (
+          <p className={notice.type === "error" ? "form-error" : "form-ok"} role="status">
+            {notice.text}
+          </p>
+        )}
+      </section>
+
+      <section>
+        <h3 className="field-label">Código de acesso</h3>
+        <p className="settings-hint">
+          Sua conta não tem senha: este navegador é lembrado por este código. Use-o para entrar em outro aparelho ou
+          se limpar os dados do navegador. <strong>Quem tiver o código entra como você — não mostre para ninguém.</strong>
+        </p>
+        <div className="code-box">
+          <code className={cls("code-value", !showCode && "is-hidden")}>{showCode ? code : "•".repeat(24)}</code>
+          <button type="button" className="button-ghost" onClick={() => setShowCode((value) => !value)}>
+            {showCode ? <EyeOff size={16} /> : <Eye size={16} />} {showCode ? "Ocultar" : "Mostrar"}
+          </button>
+          <button type="button" className="button-secondary" onClick={copy}>
+            <Copy size={16} /> {copied ? "Copiado!" : "Copiar"}
+          </button>
+        </div>
+      </section>
+
+      <section>
+        <h3 className="field-label">Sair deste navegador</h3>
+        <p className="settings-hint">O navegador esquece a conta. Ela continua existindo e você volta com o código.</p>
+        <button type="button" className="button-secondary" onClick={() => window.confirm(LOGOUT_WARNING) && logout()}>
+          <LogOut size={16} /> Sair
+        </button>
+      </section>
+
+      <section className="danger-zone">
+        <h3 className="field-label">Excluir conta</h3>
+        <p className="settings-hint">Apaga a conta e o perfil do servidor e libera o nome. Não dá para desfazer.</p>
+        <button type="button" className="button-danger" onClick={remove} disabled={busy !== null}>
+          {busy === "delete" ? "Excluindo…" : "Excluir minha conta"}
+        </button>
+      </section>
     </div>
   );
 }

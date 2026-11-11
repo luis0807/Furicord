@@ -3,12 +3,20 @@ import { CORS_ORIGIN, MAX_ATTACHMENTS, MAX_MESSAGE_LENGTH, MAX_VOICE_PEERS } fro
 import { TEXT_CHANNELS, VOICE_CHANNELS, findTextChannel, findVoiceChannel } from "./channels.js";
 import { Message, serializeMessage } from "./models/Message.js";
 import { Upload } from "./models/Upload.js";
+import { User, isDuplicateKey } from "./models/User.js";
 import { isObjectId } from "./lib/http.js";
 import { createRateLimiter } from "./lib/rateLimit.js";
 import { nameKey, normalizeName } from "./lib/names.js";
 import { messageProfile, sanitizeProfile } from "./lib/profile.js";
+import { cleanToken, clientIp, hashToken } from "./lib/accounts.js";
 
 /*
+ * Conexão: auth { token, name?, profile? }
+ *   token   = código de acesso secreto deste navegador (a "conta", sem senha)
+ *   name    = nome escolhido; só usado para criar a conta na primeira vez
+ *   profile = perfil antigo que estava só no navegador (migra para a conta nova)
+ *   Erros: INVALID_TOKEN, UNKNOWN_CODE, INVALID_NAME, NAME_TAKEN, TOO_MANY_SIGNUPS, SERVER_ERROR
+ *
  * Eventos (cliente -> servidor)
  *   message:send { channelId, content, attachmentIds }   -> ack { ok, message } | { error }
  *   typing       { channelId }
@@ -17,9 +25,13 @@ import { messageProfile, sanitizeProfile } from "./lib/profile.js";
  *   voice:leave
  *   rtc:signal   { to, data }   (oferta/resposta/candidato ICE, repassado sem olhar o conteúdo)
  *   profile:update profile      -> ack { ok, profile } | { error }
+ *   account:rename { name }     -> ack { ok, name } | { error }
+ *   account:delete              -> ack { ok } | { error }
  *
  * Eventos (servidor -> cliente)
- *   session      { self, channels, users, voice }   (logo após conectar/reconectar)
+ *   session      { self: { id, name, isNew }, channels, users, voice }   (após conectar/reconectar)
+ *   account:renamed { name }    (para todas as abas da conta)
+ *   account:deleted             (para as outras abas, antes de desconectar)
  *   presence     [{ name, profile }]
  *   voice:state  [{ id, sid, name, channelId, muted, deafened, sharing }]
  *   message:new  message
@@ -35,14 +47,17 @@ export function attachSocket(httpServer) {
     maxHttpBufferSize: 256 * 1024,
   });
 
-  // Nome em minúsculas -> dono. O mesmo nome pode estar em várias abas (sockets),
-  // desde que seja o mesmo navegador (clientId salvo no localStorage).
+  // Quem está online: nome em minúsculas -> { userId, name, sockets, profile }.
+  // A mesma conta pode estar em várias abas (sockets) ao mesmo tempo.
   const users = new Map();
   // socket.id -> participante de voz. Cada aba conta como um participante.
   const voice = new Map();
 
   const allowMessage = createRateLimiter({ windowMs: 5000, max: 5 });
   const allowProfile = createRateLimiter({ windowMs: 10_000, max: 5 });
+  const allowRename = createRateLimiter({ windowMs: 60_000, max: 3 });
+  // Contas novas por IP: impede reservar um monte de nomes num script.
+  const allowSignup = createRateLimiter({ windowMs: 60 * 60_000, max: 20 });
 
   const listUsers = () =>
     [...users.values()]
@@ -52,62 +67,169 @@ export function attachSocket(httpServer) {
   const broadcastPresence = () => io.emit("presence", listUsers());
   const broadcastVoice = () => io.emit("voice:state", listVoice());
 
-  // Sem login: o "cadastro" é só escolher um nome que ninguém online esteja usando.
-  io.use((socket, next) => {
-    const name = normalizeName(socket.handshake.auth?.name);
-    const rawClientId = socket.handshake.auth?.clientId;
-    const clientId = typeof rawClientId === "string" ? rawClientId.slice(0, 64) : "";
-    if (!name) return next(new Error("INVALID_NAME"));
-    if (!clientId) return next(new Error("INVALID_CLIENT"));
+  // Identifica quem está chegando. Com conta (código já conhecido), vale o nome
+  // salvo no banco. Sem conta, cria uma — e o nome fica reservado para este navegador.
+  io.use(async (socket, next) => {
+    try {
+      const auth = socket.handshake.auth ?? {};
+      const token = cleanToken(auth.token);
+      if (!token) return next(new Error("INVALID_TOKEN"));
+      const tokenHash = hashToken(token);
 
-    const key = nameKey(name);
-    const owner = users.get(key);
-    if (owner && owner.clientId !== clientId) return next(new Error("NAME_TAKEN"));
+      let account = await User.findOne({ tokenHash }).lean();
+      let isNew = false;
 
-    // O perfil vem do navegador (não há conta). Outra aba do mesmo navegador
-    // traz a versão mais recente, então ela substitui a anterior.
-    const profile = sanitizeProfile(socket.handshake.auth?.profile);
+      if (!account) {
+        // Entrou só com o código (outro aparelho) e ele não existe.
+        if (auth.name == null) return next(new Error("UNKNOWN_CODE"));
+        const name = normalizeName(auth.name);
+        if (!name) return next(new Error("INVALID_NAME"));
+        if (await User.exists({ nameKey: nameKey(name) })) return next(new Error("NAME_TAKEN"));
+        if (!allowSignup(clientIp(socket))) return next(new Error("TOO_MANY_SIGNUPS"));
+        try {
+          const doc = await User.create({
+            name,
+            nameKey: nameKey(name),
+            tokenHash,
+            profile: sanitizeProfile(auth.profile),
+          });
+          account = doc.toObject();
+          isNew = true;
+        } catch (err) {
+          if (!isDuplicateKey(err)) throw err;
+          // Outra aba deste navegador criou a conta no mesmo instante — ou alguém levou o nome.
+          account = await User.findOne({ tokenHash }).lean();
+          if (!account) return next(new Error("NAME_TAKEN"));
+        }
+      } else if (!account.profile && auth.profile) {
+        // Conta sem perfil: aproveita o que ainda estava guardado só no navegador.
+        const profile = sanitizeProfile(auth.profile);
+        await User.updateOne({ _id: account._id }, { $set: { profile } });
+        account.profile = profile;
+      }
 
-    // Registra já aqui para outro socket com o mesmo nome não passar no meio do caminho.
-    if (owner) {
-      owner.sockets.add(socket.id);
-      if (profile) owner.profile = profile;
-    } else {
-      users.set(key, { name, clientId, sockets: new Set([socket.id]), profile });
+      User.updateOne({ _id: account._id }, { $set: { lastSeenAt: new Date() } }).catch(() => {});
+
+      // Só anota quem é. Entrar na lista de online fica para o "connection": se a aba
+      // fechar enquanto esperávamos o banco, o Socket.IO descarta a conexão sem
+      // disparar "disconnect" e ela viraria um fantasma online para sempre.
+      Object.assign(socket.data, {
+        userId: String(account._id),
+        name: account.name,
+        key: account.nameKey,
+        profile: account.profile ?? null,
+        isNew,
+      });
+      next();
+    } catch (err) {
+      console.error("Erro ao identificar conexão:", err);
+      next(new Error("SERVER_ERROR"));
     }
-
-    Object.assign(socket.data, { name: owner?.name ?? name, key });
-    next();
   });
 
   io.on("connection", (socket) => {
-    const { name, key } = socket.data;
-    const reply = (ack) => (typeof ack === "function" ? ack : () => {});
+    // Nome e chave são lidos de socket.data a cada evento (e não guardados em
+    // constantes) porque a pessoa pode trocar de nome com a conexão aberta.
+    const me = () => users.get(socket.data.key);
+    // A função de resposta chega como último argumento — ou como o primeiro, se o
+    // cliente não mandou dados (ex: account:delete). Pega a que existir.
+    const reply = (...args) => args.findLast((arg) => typeof arg === "function") ?? (() => {});
+
+    const online = me();
+    if (online) online.sockets.add(socket.id);
+    else {
+      users.set(socket.data.key, {
+        userId: socket.data.userId,
+        name: socket.data.name,
+        sockets: new Set([socket.id]),
+        profile: socket.data.profile,
+      });
+    }
 
     socket.emit("session", {
-      self: { id: socket.id, name },
+      self: { id: socket.id, name: socket.data.name, isNew: socket.data.isNew },
       channels: { text: TEXT_CHANNELS, voice: VOICE_CHANNELS },
       users: listUsers(),
       voice: listVoice(),
     });
-    // Também quando é outra aba: ela pode ter trazido um perfil mais novo.
     broadcastPresence();
 
-    socket.on("profile:update", (payload, ack) => {
-      const respond = reply(ack);
-      const owner = users.get(key);
+    socket.on("profile:update", async (payload, ack) => {
+      const respond = reply(payload, ack);
+      const owner = me();
       if (!owner) return respond({ error: "Sessão inválida. Recarregue a página." });
-      if (!allowProfile(key)) return respond({ error: "Calma! Espere alguns segundos para salvar de novo." });
+      if (!allowProfile(socket.data.key)) return respond({ error: "Calma! Espere alguns segundos para salvar de novo." });
 
       const profile = sanitizeProfile(payload);
       if (!profile) return respond({ error: "Perfil inválido" });
+      try {
+        await User.updateOne({ _id: socket.data.userId }, { $set: { profile } });
+      } catch (err) {
+        console.error("Erro ao salvar perfil:", err);
+        return respond({ error: "Não foi possível salvar o perfil. Tente de novo." });
+      }
       owner.profile = profile;
       respond({ ok: true, profile });
       broadcastPresence();
     });
 
+    socket.on("account:rename", async (payload, ack) => {
+      const respond = reply(payload, ack);
+      const owner = me();
+      if (!owner) return respond({ error: "Sessão inválida. Recarregue a página." });
+      const name = normalizeName(payload?.name);
+      if (!name) return respond({ error: "Use de 2 a 32 caracteres." });
+      if (!allowRename(socket.data.userId)) return respond({ error: "Calma! Espere um minuto para trocar de novo." });
+
+      const oldKey = socket.data.key;
+      const key = nameKey(name);
+      try {
+        // O índice único de nameKey garante que ninguém mais tem esse nome.
+        await User.updateOne({ _id: socket.data.userId }, { $set: { name, nameKey: key } });
+      } catch (err) {
+        if (isDuplicateKey(err)) return respond({ error: "Esse nome já pertence a outra pessoa." });
+        console.error("Erro ao trocar nome:", err);
+        return respond({ error: "Não foi possível trocar o nome. Tente de novo." });
+      }
+
+      // Leva a conta (todas as abas, inclusive na voz) para o nome novo.
+      users.delete(oldKey);
+      owner.name = name;
+      users.set(key, owner);
+      for (const id of owner.sockets) {
+        const tab = io.sockets.sockets.get(id);
+        if (tab) Object.assign(tab.data, { name, key });
+        const inVoice = voice.get(id);
+        if (inVoice) inVoice.name = name;
+        io.to(id).emit("account:renamed", { name });
+      }
+      respond({ ok: true, name });
+      broadcastPresence();
+      broadcastVoice();
+    });
+
+    socket.on("account:delete", async (payload, ack) => {
+      const respond = reply(payload, ack);
+      const owner = me();
+      if (!owner) return respond({ error: "Sessão inválida. Recarregue a página." });
+      try {
+        await User.deleteOne({ _id: socket.data.userId });
+      } catch (err) {
+        console.error("Erro ao excluir conta:", err);
+        return respond({ error: "Não foi possível excluir a conta. Tente de novo." });
+      }
+      respond({ ok: true });
+      // Derruba todas as abas desta conta; o nome fica livre para outra pessoa.
+      for (const id of [...owner.sockets]) {
+        const tab = io.sockets.sockets.get(id);
+        if (!tab) continue;
+        if (id !== socket.id) tab.emit("account:deleted");
+        tab.disconnect();
+      }
+    });
+
     socket.on("message:send", async (payload, ack) => {
-      const respond = reply(ack);
+      const respond = reply(payload, ack);
       try {
         const channel = findTextChannel(payload?.channelId);
         if (!channel) return respond({ error: "Canal não encontrado" });
@@ -122,7 +244,7 @@ export function attachSocket(httpServer) {
           : [];
         if (!content && ids.length === 0) return respond({ error: "Mensagem vazia" });
 
-        if (!allowMessage(key)) {
+        if (!allowMessage(socket.data.key)) {
           return respond({ error: "Calma! Você está mandando mensagens rápido demais." });
         }
 
@@ -147,8 +269,8 @@ export function attachSocket(httpServer) {
 
         const doc = await Message.create({
           channelId: channel.id,
-          author: name,
-          authorProfile: messageProfile(users.get(key)?.profile),
+          author: socket.data.name,
+          authorProfile: messageProfile(me()?.profile),
           content,
           attachments,
         });
@@ -163,7 +285,7 @@ export function attachSocket(httpServer) {
 
     socket.on("typing", (payload) => {
       const channel = findTextChannel(payload?.channelId);
-      if (channel) socket.broadcast.emit("typing", { channelId: channel.id, name });
+      if (channel) socket.broadcast.emit("typing", { channelId: channel.id, name: socket.data.name });
     });
 
     // --- Voz -------------------------------------------------------------------
@@ -171,7 +293,7 @@ export function attachSocket(httpServer) {
     // as mensagens de negociação do WebRTC. A mídia vai direto de navegador para navegador.
 
     socket.on("voice:join", (payload, ack) => {
-      const respond = reply(ack);
+      const respond = reply(payload, ack);
       const channel = findVoiceChannel(payload?.channelId);
       if (!channel) return respond({ error: "Canal de voz não encontrado" });
 
@@ -188,7 +310,7 @@ export function attachSocket(httpServer) {
       voice.set(socket.id, {
         id: socket.id,
         sid,
-        name,
+        name: socket.data.name,
         channelId: channel.id,
         muted: Boolean(payload.muted),
         deafened: Boolean(payload.deafened),
@@ -221,11 +343,11 @@ export function attachSocket(httpServer) {
     socket.on("disconnect", () => {
       if (voice.delete(socket.id)) broadcastVoice();
 
-      const owner = users.get(key);
+      const owner = me();
       if (!owner) return;
       owner.sockets.delete(socket.id);
       if (owner.sockets.size === 0) {
-        users.delete(key);
+        users.delete(socket.data.key);
         broadcastPresence();
       }
     });

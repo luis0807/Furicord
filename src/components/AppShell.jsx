@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { LoaderCircle } from "lucide-react";
+import { KeyRound, LoaderCircle, X } from "lucide-react";
 import { useChat } from "../state/chat-context.js";
 import { cls } from "../lib/cls.js";
-import { BrandMark } from "./ui.jsx";
+import { useOverlays } from "./overlay-context.js";
+import { BrandMark, IconButton } from "./ui.jsx";
 import Sidebar from "./Sidebar.jsx";
 import ChannelView from "./ChannelView.jsx";
 import VoiceView from "./VoiceView.jsx";
@@ -39,6 +40,7 @@ export default function AppShell() {
               <LoaderCircle size={14} className="spin" /> Conexão perdida. Reconectando…
             </div>
           )}
+          {state.self.isNew && <WelcomeBanner name={state.self.name} />}
           {textChannel && <ChannelView key={textChannel.id} channel={textChannel} layout={layout} />}
           {voiceChannel && <VoiceView key={voiceChannel.id} channel={voiceChannel} layout={layout} />}
         </main>
@@ -55,6 +57,29 @@ export default function AppShell() {
         />
       </div>
     </OverlayProvider>
+  );
+}
+
+// Só na primeira entrada: avisa que o nome ficou reservado e onde está o código.
+function WelcomeBanner({ name }) {
+  const { openSettings } = useOverlays();
+  const [closed, setClosed] = useState(false);
+  if (closed) return null;
+
+  return (
+    <div className="account-banner" role="status">
+      <KeyRound size={16} />
+      <span>
+        O nome <strong>{name}</strong> agora é seu e este navegador vai lembrar de você. Para entrar em outro aparelho, use
+        o código de acesso.
+      </span>
+      <button type="button" className="link-button" onClick={() => openSettings("conta")}>
+        Ver código
+      </button>
+      <IconButton label="Fechar aviso" onClick={() => setClosed(true)}>
+        <X />
+      </IconButton>
+    </div>
   );
 }
 

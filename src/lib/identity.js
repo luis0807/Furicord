@@ -1,8 +1,12 @@
-// Não existe conta: a "identidade" é o nome escolhido + um id aleatório deste navegador.
-// O id permite abrir várias abas com o mesmo nome sem o servidor achar que é outra pessoa.
+// Conta sem senha: o servidor guarda nome e perfil ligados a um código de acesso
+// secreto que fica neste navegador. Quem tem o código entra como a pessoa — por isso
+// ele só sai daqui quando ela mesma copia (Configurações > Conta).
 const NAME_KEY = "furicord.name";
-const CLIENT_KEY = "furicord.clientId";
+// Nome antigo da chave mantido de propósito: quem já usava o Furicord continua com o
+// mesmo código e o nome passa a ser dele na próxima conexão.
+const TOKEN_KEY = "furicord.clientId";
 const VIEW_KEY = "furicord.view";
+const TOKEN_PATTERN = /^[A-Za-z0-9_-]{20,128}$/;
 
 function read(key) {
   try {
@@ -24,14 +28,24 @@ function write(key, value) {
 export const getSavedName = () => read(NAME_KEY);
 export const saveName = (name) => write(NAME_KEY, name);
 
-let clientId = null;
-export function getClientId() {
-  clientId ??= read(CLIENT_KEY);
-  if (!clientId) {
-    clientId = randomId();
-    write(CLIENT_KEY, clientId);
+export function getToken() {
+  let token = read(TOKEN_KEY);
+  if (!token || !TOKEN_PATTERN.test(token)) {
+    token = generateToken();
+    write(TOKEN_KEY, token);
   }
-  return clientId;
+  return token;
+}
+
+export const isValidToken = (value) => TOKEN_PATTERN.test(value);
+export const setToken = (token) => write(TOKEN_KEY, token);
+export const clearToken = () => write(TOKEN_KEY, null);
+
+// 24 bytes aleatórios (192 bits). getRandomValues funciona até fora de HTTPS,
+// ao contrário de randomUUID.
+function generateToken() {
+  const bytes = crypto.getRandomValues(new Uint8Array(24));
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 export function getSavedView() {

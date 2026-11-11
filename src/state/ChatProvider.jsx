@@ -2,25 +2,31 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import { io } from "socket.io-client";
 import { SERVER_URL } from "../lib/config.js";
 import { fetchMessages } from "../lib/api.js";
-import { getClientId, getSavedView, saveView } from "../lib/identity.js";
+import { getSavedView, getToken, saveView } from "../lib/identity.js";
 import { playSound } from "../lib/sounds.js";
-import { loadProfile, saveProfile } from "../lib/profile.js";
+import { clearLegacyProfile, takeLegacyProfile } from "../lib/profile.js";
 import { ChatContext, ProfilesContext } from "./chat-context.js";
 import { TYPING_TTL_MS, chatReducer, createInitialState } from "./chatReducer.js";
 
 const REJECTIONS = {
-  NAME_TAKEN: "Esse nome já está sendo usado por alguém online agora. Escolha outro.",
+  NAME_TAKEN: "Esse nome já pertence a outra pessoa. Escolha outro — ou, se for seu, entre com o seu código de acesso.",
   INVALID_NAME: "Nome inválido. Use de 2 a 32 caracteres.",
+  UNKNOWN_CODE: "Código de acesso não encontrado. Confira se copiou ele inteiro.",
+  INVALID_TOKEN: "Código de acesso inválido. Confira se copiou ele inteiro.",
+  TOO_MANY_SIGNUPS: "Muitas contas criadas desta rede agora há pouco. Tente de novo mais tarde.",
+  SERVER_ERROR: "O servidor teve um problema para te identificar. Tente de novo em instantes.",
 };
 
-export function ChatProvider({ name, onRejected, onLogout, children }) {
+// `login` = { name } ao criar conta / voltar, ou { name: null } ao entrar só com o
+// código. Ele só muda quando a pessoa entra ou sai, e é isso que recria a conexão.
+export function ChatProvider({ login, onIdentity, onRejected, onLogout, children }) {
   const [state, dispatch] = useReducer(chatReducer, null, () => createInitialState(getSavedView()));
   const [socket, setSocket] = useState(null);
 
   // Os callbacks do pai podem mudar a cada render; o socket só precisa do mais recente.
-  const callbacks = useRef({ onRejected, onLogout });
+  const callbacks = useRef({ onIdentity, onRejected, onLogout });
   useEffect(() => {
-    callbacks.current = { onRejected, onLogout };
+    callbacks.current = { onIdentity, onRejected, onLogout };
   });
 
   // Atualizado durante o render (e não num efeito) de propósito: os efeitos dos filhos
@@ -31,15 +37,34 @@ export function ChatProvider({ name, onRejected, onLogout, children }) {
   const inflight = useRef(new Set());
 
   useEffect(() => {
-    const options = { auth: { name, clientId: getClientId(), profile: loadProfile() } };
+    const legacyProfile = takeLegacyProfile();
+    const auth = { token: getToken(), ...(login.name ? { name: login.name } : {}) };
+    if (legacyProfile) auth.profile = legacyProfile;
+    const options = { auth };
     const client = SERVER_URL ? io(SERVER_URL, options) : io(options);
 
-    client.on("session", (session) => dispatch({ type: "session", session }));
+    client.on("session", (session) => {
+      // O perfil antigo já virou o da conta: não precisa mais dele aqui.
+      if (client.auth.profile) {
+        clearLegacyProfile();
+        client.auth = { token: client.auth.token, name: client.auth.name };
+      }
+      // Quem manda no nome é o servidor (pode ter mudado em outro aparelho).
+      callbacks.current.onIdentity(session.self.name);
+      dispatch({ type: "session", session });
+    });
     client.on("disconnect", () => dispatch({ type: "disconnected" }));
     client.on("connect_error", (err) => {
       // `active` = o cliente vai tentar de novo sozinho (servidor fora do ar / acordando).
-      // Se não está ativo, foi o servidor que recusou a conexão (ex: nome em uso).
-      if (!client.active) callbacks.current.onRejected(REJECTIONS[err.message] ?? err.message);
+      // Se não está ativo, foi o servidor que recusou a conexão (ex: nome de outra pessoa).
+      if (!client.active) callbacks.current.onRejected(REJECTIONS[err.message] ?? err.message, err.message);
+    });
+    client.on("account:renamed", ({ name }) => {
+      callbacks.current.onIdentity(name);
+      dispatch({ type: "renamed", name });
+    });
+    client.on("account:deleted", () => {
+      callbacks.current.onRejected("Esta conta foi excluída em outra aba.", "DELETED");
     });
     client.on("presence", (users) => dispatch({ type: "presence", users }));
     client.on("voice:state", (voice) => dispatch({ type: "voice", voice }));
@@ -59,7 +84,7 @@ export function ChatProvider({ name, onRejected, onLogout, children }) {
       client.disconnect();
       setSocket(null);
     };
-  }, [name]);
+  }, [login]);
 
   // "Fulano está digitando…" some sozinho se a pessoa parar de digitar.
   const hasTyping = Object.keys(state.typing).length > 0;
@@ -114,15 +139,12 @@ export function ChatProvider({ name, onRejected, onLogout, children }) {
     callbacks.current.onLogout();
   }, [socket]);
 
-  // Salva neste navegador e avisa o servidor, que repassa para todo mundo.
-  const updateProfile = useCallback(
-    async (profile) => {
-      saveProfile(profile);
-      // Se a conexão cair, a reconexão já leva o perfil novo.
-      if (socket) socket.auth = { ...socket.auth, profile };
-      if (!socket?.connected) return { ok: true };
+  // Pedidos que mexem na conta (perfil, nome, exclusão): o servidor salva no banco.
+  const request = useCallback(
+    async (event, payload) => {
+      if (!socket?.connected) return { error: "Sem conexão com o servidor. Tente de novo em instantes." };
       try {
-        return await socket.timeout(10_000).emitWithAck("profile:update", profile);
+        return await socket.timeout(10_000).emitWithAck(event, payload);
       } catch {
         return { error: "O servidor não respondeu. Tente de novo." };
       }
@@ -130,9 +152,31 @@ export function ChatProvider({ name, onRejected, onLogout, children }) {
     [socket],
   );
 
+  const updateProfile = useCallback((profile) => request("profile:update", profile), [request]);
+  const renameAccount = useCallback((name) => request("account:rename", { name }), [request]);
+  const deleteAccount = useCallback(async () => {
+    const result = await request("account:delete");
+    if (result?.ok) {
+      socket?.disconnect();
+      callbacks.current.onLogout();
+    }
+    return result;
+  }, [request, socket]);
+
   const value = useMemo(
-    () => ({ state, socket, loadMessages, sendMessage, emitTyping, setView, logout, updateProfile }),
-    [state, socket, loadMessages, sendMessage, emitTyping, setView, logout, updateProfile],
+    () => ({
+      state,
+      socket,
+      loadMessages,
+      sendMessage,
+      emitTyping,
+      setView,
+      logout,
+      updateProfile,
+      renameAccount,
+      deleteAccount,
+    }),
+    [state, socket, loadMessages, sendMessage, emitTyping, setView, logout, updateProfile, renameAccount, deleteAccount],
   );
 
   const profiles = useMemo(

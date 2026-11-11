@@ -1,6 +1,5 @@
-// Perfil visual de cada pessoa. Não existe conta: ele fica salvo neste navegador,
-// vai junto ao conectar e o servidor repassa para os outros (com o formato validado
-// em server/src/lib/profile.js).
+// Perfil visual de cada pessoa. Fica salvo na conta, no servidor (formato validado
+// em server/src/lib/profile.js), que repassa para quem está online.
 
 const STORAGE_KEY = "furicord.profile";
 export const MAX_BIO_LENGTH = 190;
@@ -128,19 +127,21 @@ export function normalizeProfile(raw) {
   };
 }
 
-export function loadProfile() {
+// Antes das contas, o perfil ficava só no navegador. Ele vai junto na primeira
+// conexão para virar o perfil da conta e depois é apagado daqui.
+export function takeLegacyProfile() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return normalizeProfile(raw ? JSON.parse(raw) : null);
+    return raw ? normalizeProfile(JSON.parse(raw)) : null;
   } catch {
-    return normalizeProfile(null);
+    return null;
   }
 }
 
-export function saveProfile(profile) {
+export function clearLegacyProfile() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
+    localStorage.removeItem(STORAGE_KEY);
   } catch {
-    // navegação privada / armazenamento cheio: vale só nesta sessão
+    // sem armazenamento: nada para limpar
   }
 }

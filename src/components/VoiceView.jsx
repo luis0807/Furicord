@@ -102,7 +102,7 @@ function VoiceStage({ participants }) {
       participant={tile.participant}
       isSelf={tile.isSelf}
       speaking={isSpeaking(tile.participant.id)}
-      connectionState={tile.isSelf ? "connected" : voice.peers[tile.participant.id]?.connectionState}
+      connectionState={tile.isSelf ? "connected" : peerStatus(voice.peers[tile.participant.id])}
     />
   );
   const renderScreen = (tile) => (
@@ -147,9 +147,12 @@ function VoiceStage({ participants }) {
 const CONNECTION_LABELS = {
   new: "Conectando…",
   connecting: "Conectando…",
+  slow: "Demorando para conectar…",
   disconnected: "Conexão instável…",
-  failed: "Não conectou — a rede pode precisar de um servidor TURN",
+  failed: "Não conectou — a rede bloqueou a chamada. Saia e entre de novo para tentar.",
 };
+
+const peerStatus = (peer) => (peer?.slow ? "slow" : peer?.connectionState);
 
 function PersonTile({ participant, isSelf, speaking, connectionState }) {
   const status = isSelf || connectionState === "connected" ? null : (CONNECTION_LABELS[connectionState] ?? "Conectando…");

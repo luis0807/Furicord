@@ -28,6 +28,12 @@ export const SELF = "self";
 const MIC_CONSTRAINTS = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
 const SPEAKING_THRESHOLD = 0.02;
 const SPEAKING_HOLD_MS = 300;
+// Quantas vezes seguidas tenta religar uma conexão que falhou.
+const MAX_ICE_RESTARTS = 1;
+// A partir de quando "Conectando…" vira um aviso de que algo está errado...
+const SLOW_CONNECT_MS = 12_000;
+// ...e quando desiste (ou religa uma vez, se for quem começou a conexão).
+const CONNECT_TIMEOUT_MS = 25_000;
 
 export class VoiceEngine {
   listeners = new Set();
@@ -86,7 +92,13 @@ export class VoiceEngine {
     for (const peer of this.peers.values()) {
       peers[peer.id] = {
         id: peer.id,
-        connectionState: peer.pc.connectionState,
+        // "failed" também quando o prazo acabou (o navegador às vezes nunca desiste).
+        connectionState:
+          peer.gaveUp && peer.pc.connectionState !== "connected" ? "failed" : peer.pc.connectionState,
+        slow:
+          !peer.gaveUp &&
+          ["new", "connecting", "disconnected"].includes(peer.pc.connectionState) &&
+          Date.now() - peer.since > SLOW_CONNECT_MS,
         micStream: peer.micStream,
         screenStream: peer.screenStream,
         screenAudioStream: peer.screenAudioStream,
@@ -426,6 +438,11 @@ export class VoiceEngine {
       initiator,
       pc,
       tr: null,
+      restarts: 0,
+      since: 0,
+      gaveUp: false,
+      slowTimer: null,
+      giveUpTimer: null,
       queue: Promise.resolve(),
       closed: false,
       micStream: null,
@@ -438,10 +455,19 @@ export class VoiceEngine {
       if (candidate) this.signal(peer, { candidate: candidate.toJSON() });
     };
     pc.onconnectionstatechange = () => {
-      // Rede mudou (Wi-Fi caiu, trocou de rede...): tenta reconectar sem sair da sala.
-      if (pc.connectionState === "failed" && peer.initiator) pc.restartIce();
+      const state = pc.connectionState;
+      if (state === "connected") {
+        peer.restarts = 0;
+        this.stopWatching(peer);
+      } else if (state === "failed") {
+        this.connectionStuck(peer);
+      } else if (state === "disconnected" && !peer.giveUpTimer) {
+        // Rede oscilou: o navegador costuma voltar sozinho; se não voltar, o prazo decide.
+        this.watchConnection(peer);
+      }
       this.changed();
     };
+    this.watchConnection(peer);
 
     if (initiator) {
       const transceivers = ["audio", "video", "audio"].map((kind) =>
@@ -457,6 +483,42 @@ export class VoiceEngine {
 
     this.changed();
     return peer;
+  }
+
+  // Prazo para a conexão sair do "Conectando…". Necessário porque, quando não existe
+  // caminho nenhum entre as duas redes, o navegador nunca declara "failed" sozinho.
+  watchConnection(peer) {
+    this.stopWatching(peer);
+    peer.since = Date.now();
+    peer.gaveUp = false;
+    peer.slowTimer = setTimeout(() => this.changed(), SLOW_CONNECT_MS + 100); // só redesenha
+    peer.giveUpTimer = setTimeout(() => {
+      peer.giveUpTimer = null;
+      if (!peer.closed && peer.pc.connectionState !== "connected") this.connectionStuck(peer);
+    }, CONNECT_TIMEOUT_MS);
+  }
+
+  stopWatching(peer) {
+    clearTimeout(peer.slowTimer);
+    clearTimeout(peer.giveUpTimer);
+    peer.slowTimer = null;
+    peer.giveUpTimer = null;
+  }
+
+  // Falhou ou passou do prazo. Rede mudou (Wi-Fi caiu, trocou de rede...)? Tenta
+  // religar uma vez sem sair da sala. Se a rede bloqueia a chamada (sem TURN), tentar
+  // de novo não resolve: desiste e mostra o aviso.
+  connectionStuck(peer) {
+    if (peer.closed) return;
+    if (peer.initiator && peer.restarts < MAX_ICE_RESTARTS) {
+      peer.restarts++;
+      this.watchConnection(peer);
+      peer.pc.restartIce();
+    } else {
+      this.stopWatching(peer);
+      peer.gaveUp = true;
+    }
+    this.changed();
   }
 
   bindTransceivers(peer, [mic, video, screenAudio]) {
@@ -509,6 +571,9 @@ export class VoiceEngine {
           const transceivers = [...pc.getTransceivers()].sort((a, b) => Number(a.mid) - Number(b.mid));
           for (const transceiver of transceivers) transceiver.direction = "sendrecv";
           await this.bindTransceivers(peer, transceivers);
+        } else if (pc.connectionState !== "connected") {
+          // O outro lado está tentando religar: zera o prazo deste lado também.
+          this.watchConnection(peer);
         }
         if (peer.closed) return;
         await pc.setLocalDescription();
@@ -531,6 +596,7 @@ export class VoiceEngine {
     if (!peer) return;
     this.peers.delete(id);
     peer.closed = true;
+    this.stopWatching(peer);
     peer.pc.onicecandidate = null;
     peer.pc.onconnectionstatechange = null;
     peer.pc.onnegotiationneeded = null;

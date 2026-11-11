@@ -1207,6 +1207,18 @@ textarea {
   color: var(--text);
 }
 
+/* Offline: apagado, como no Discord; volta ao normal ao passar o mouse. */
+.member.is-offline > .avatar,
+.member.is-offline > .member-name {
+  opacity: 0.45;
+  transition: opacity 0.15s;
+}
+
+.member.is-offline:hover > .avatar,
+.member.is-offline:hover > .member-name {
+  opacity: 1;
+}
+
 .member-name {
   flex: 1;
   min-width: 0;

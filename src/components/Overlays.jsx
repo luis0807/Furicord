@@ -85,7 +85,7 @@ function ProfilePopover({ name, fallback, anchor, onClose, onEdit }) {
       <ProfileCard
         name={name}
         profile={profile}
-        online={live !== undefined}
+        online={state.users.some((user) => user.name === name && user.online)}
         footer={
           isSelf && (
             <button type="button" className="button-secondary profile-edit" onClick={onEdit}>

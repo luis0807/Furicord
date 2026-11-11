@@ -17,7 +17,7 @@ export default function ChannelHeader({ icon, title, topic, layout }) {
       )}
       <div className="channel-header-actions">
         <IconButton
-          label={layout.membersOpen ? "Ocultar quem está online" : "Mostrar quem está online"}
+          label={layout.membersOpen ? "Ocultar membros" : "Mostrar membros"}
           active={layout.membersOpen}
           onClick={layout.onToggleMembers}
         >

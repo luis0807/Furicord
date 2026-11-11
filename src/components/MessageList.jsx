@@ -131,7 +131,7 @@ export default function MessageList({ channel, entry, onOpenImage, onLoadOlder, 
 
 const MessageItem = memo(function MessageItem({ message, grouped, selfName, onOpenImage }) {
   const { openProfile } = useOverlays();
-  // Quem está online aparece com o perfil de agora; quem saiu, com o gravado na mensagem.
+  // Membros aparecem com o perfil de agora; conta que sumiu, com o gravado na mensagem.
   const live = useProfile(message.author);
   const profile = live ?? message.authorProfile ?? null;
   const showProfile = (event) => openProfile(message.author, event, message.authorProfile ?? null);

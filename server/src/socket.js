@@ -10,6 +10,10 @@ import { nameKey, normalizeName } from "./lib/names.js";
 import { messageProfile, sanitizeProfile } from "./lib/profile.js";
 import { cleanToken, clientIp, hashToken } from "./lib/accounts.js";
 
+// Lista de membros: quantas contas offline ficam guardadas e quantas aparecem.
+const MAX_LOADED_ACCOUNTS = 1000;
+const MAX_OFFLINE_LISTED = 200;
+
 /*
  * Conexão: auth { token, name?, resume?, profile? }
  *   token   = código de acesso secreto deste navegador (a "conta", sem senha)
@@ -36,14 +40,14 @@ import { cleanToken, clientIp, hashToken } from "./lib/accounts.js";
  *   session      { self: { id, name, isNew }, channels, users, voice }   (após conectar/reconectar)
  *   account:renamed { name }    (para todas as abas da conta)
  *   account:deleted             (para as outras abas, antes de desconectar)
- *   presence     [{ name, profile }]
+ *   presence     [{ name, profile, online }]   (contas online e as offline mais recentes)
  *   voice:state  [{ id, sid, name, channelId, muted, deafened, sharing }]
  *   message:new  message
  *   typing       { channelId, name }
  *   rtc:signal   { from, data }
  *
  * Estado de presença e voz fica só em memória: se o servidor reiniciar, todo mundo
- * reconecta sozinho e o estado se reconstrói.
+ * reconecta sozinho e o estado se reconstrói. A lista de offline vem do banco.
  */
 export function attachSocket(httpServer) {
   const io = new Server(httpServer, {
@@ -54,8 +58,37 @@ export function attachSocket(httpServer) {
   // Quem está online: nome em minúsculas -> { userId, name, sockets, profile }.
   // A mesma conta pode estar em várias abas (sockets) ao mesmo tempo.
   const users = new Map();
+  // Quem não está online: nome em minúsculas -> { name, profile, lastSeenAt }.
+  // Vem do banco ao ligar e é mantido aqui (quem sai entra, quem volta sai).
+  const offline = new Map();
   // socket.id -> participante de voz. Cada aba conta como um participante.
   const voice = new Map();
+
+  // Carrega as contas do banco uma vez. Se falhar, tenta de novo na próxima conexão
+  // (sem impedir ninguém de entrar).
+  let offlineLoad = null;
+  const loadOffline = () => {
+    offlineLoad ??= User.find({}, { name: 1, nameKey: 1, profile: 1, lastSeenAt: 1 })
+      .sort({ lastSeenAt: -1 })
+      .limit(MAX_LOADED_ACCOUNTS)
+      .lean()
+      .then((docs) => {
+        for (const doc of docs) {
+          if (users.has(doc.nameKey) || offline.has(doc.nameKey)) continue;
+          offline.set(doc.nameKey, {
+            name: doc.name,
+            profile: doc.profile ?? null,
+            lastSeenAt: doc.lastSeenAt?.getTime() ?? 0,
+          });
+        }
+      })
+      .catch((err) => {
+        console.error("Erro ao carregar a lista de membros:", err);
+        offlineLoad = null;
+      });
+    return offlineLoad;
+  };
+  loadOffline();
 
   const allowMessage = createRateLimiter({ windowMs: 5000, max: 5 });
   const allowProfile = createRateLimiter({ windowMs: 10_000, max: 5 });
@@ -63,10 +96,16 @@ export function attachSocket(httpServer) {
   // Contas novas por IP: impede reservar um monte de nomes num script.
   const allowSignup = createRateLimiter({ windowMs: 60 * 60_000, max: 20 });
 
-  const listUsers = () =>
-    [...users.values()]
-      .map((user) => ({ name: user.name, profile: user.profile ?? null }))
-      .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  const byName = (a, b) => a.name.localeCompare(b.name, "pt-BR");
+  // Todos online + os offline vistos mais recentemente (para a lista não crescer sem fim).
+  const listUsers = () => [
+    ...[...users.values()].map((user) => ({ name: user.name, profile: user.profile ?? null, online: true })).sort(byName),
+    ...[...offline.values()]
+      .sort((a, b) => b.lastSeenAt - a.lastSeenAt)
+      .slice(0, MAX_OFFLINE_LISTED)
+      .map((user) => ({ name: user.name, profile: user.profile ?? null, online: false }))
+      .sort(byName),
+  ];
   const listVoice = () => [...voice.values()];
   const broadcastPresence = () => io.emit("presence", listUsers());
   const broadcastVoice = () => io.emit("voice:state", listVoice());
@@ -75,6 +114,7 @@ export function attachSocket(httpServer) {
   // salvo no banco. Sem conta, cria uma — e o nome fica reservado para este navegador.
   io.use(async (socket, next) => {
     try {
+      await loadOffline(); // só espera de verdade na primeira conexão
       const auth = socket.handshake.auth ?? {};
       const token = cleanToken(auth.token);
       if (!token) return next(new Error("INVALID_TOKEN"));
@@ -147,6 +187,7 @@ export function attachSocket(httpServer) {
     const online = me();
     if (online) online.sockets.add(socket.id);
     else {
+      offline.delete(socket.data.key);
       users.set(socket.data.key, {
         userId: socket.data.userId,
         name: socket.data.name,
@@ -228,6 +269,7 @@ export function attachSocket(httpServer) {
         return respond({ error: "Não foi possível excluir a conta. Tente de novo." });
       }
       respond({ ok: true });
+      owner.deleted = true; // ao desconectar, não vai para a lista de offline
       // Derruba todas as abas desta conta; o nome fica livre para outra pessoa.
       for (const id of [...owner.sockets]) {
         const tab = io.sockets.sockets.get(id);
@@ -357,6 +399,11 @@ export function attachSocket(httpServer) {
       owner.sockets.delete(socket.id);
       if (owner.sockets.size === 0) {
         users.delete(socket.data.key);
+        if (!owner.deleted) {
+          const lastSeenAt = Date.now();
+          offline.set(socket.data.key, { name: owner.name, profile: owner.profile ?? null, lastSeenAt });
+          User.updateOne({ _id: owner.userId }, { $set: { lastSeenAt: new Date(lastSeenAt) } }).catch(() => {});
+        }
         broadcastPresence();
       }
     });

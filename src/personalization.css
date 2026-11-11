@@ -1,0 +1,1122 @@
+/* ==========================================================================
+   Personalização: perfil, nome, enfeites e configurações.
+   As variáveis de cor vêm de index.css (e do tema, em src/lib/theme.js).
+   ========================================================================== */
+
+/* ---------- Botões genéricos ---------- */
+
+.plain-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+
+.avatar-button {
+  display: block;
+  height: fit-content;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  line-height: 0;
+  cursor: pointer;
+}
+
+.plain-button.message-author {
+  max-width: 100%;
+}
+
+/* A sublinha usa a cor do botão, então aparece até em nome com gradiente. */
+.plain-button.message-author:hover {
+  text-decoration: underline;
+}
+
+.button-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.button-secondary:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.button-secondary.is-busy {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+.button-ghost {
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-muted);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.button-ghost:hover:not(:disabled) {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+/* ---------- Nome estilizado ---------- */
+
+.name-color {
+  color: var(--name-1);
+}
+
+/* As fontes de nome têm um peso só; sem isso o navegador "engorda" na marra. */
+.has-name-font {
+  font-weight: 400;
+  letter-spacing: 0.01em;
+}
+
+.name-fx-gradient,
+.name-fx-shimmer,
+.name-fx-rainbow {
+  background-image: linear-gradient(90deg, var(--name-1, #fff), var(--name-2, var(--accent)));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  /* Em texto recortado, text-shadow é pintado por cima do gradiente e o apaga.
+     Para destacar sobre fundos coloridos, usamos drop-shadow (veja as placas). */
+  text-shadow: none;
+}
+
+.name-fx-shimmer {
+  background-image: linear-gradient(90deg, var(--name-1, #fff), var(--name-2, var(--accent)), var(--name-1, #fff));
+  background-size: 200% 100%;
+  animation: name-slide 2.8s linear infinite;
+}
+
+.name-fx-rainbow {
+  background-image: linear-gradient(90deg, #ff5f6d, #ffc371, #47e891, #4fa9ff, #b56cff, #ff5f6d);
+  background-size: 200% 100%;
+  animation: name-slide 4s linear infinite;
+}
+
+@keyframes name-slide {
+  to {
+    background-position: 200% 0;
+  }
+}
+
+.name-fx-glow {
+  color: var(--name-1, var(--text));
+  text-shadow:
+    0 0 6px var(--name-2, var(--name-1, var(--accent))),
+    0 0 14px color-mix(in srgb, var(--name-2, var(--name-1, var(--accent))) 60%, transparent);
+}
+
+.name-fx-neon {
+  color: color-mix(in srgb, var(--name-1, var(--accent)) 35%, #fff);
+  text-shadow:
+    0 0 2px #fff,
+    0 0 6px var(--name-1, var(--accent)),
+    0 0 12px var(--name-1, var(--accent)),
+    0 0 22px var(--name-2, var(--name-1, var(--accent)));
+  animation: name-neon 5s infinite;
+}
+
+@keyframes name-neon {
+  0%,
+  18%,
+  22%,
+  25%,
+  53%,
+  57%,
+  100% {
+    opacity: 1;
+  }
+  20%,
+  24%,
+  55% {
+    opacity: 0.55;
+  }
+}
+
+/* ---------- Decorações do avatar ----------
+   Um elemento por cima do avatar, um pouco maior que ele, que escala junto
+   com --avatar-size (de 22px na barra lateral a 84px no cartão). */
+
+.avatar-deco {
+  --ring: max(2px, calc(var(--avatar-size) * 0.075));
+  position: absolute;
+  inset: -12%;
+  z-index: 1;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.avatar-deco::before,
+.avatar-deco::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+}
+
+/* Anel: um gradiente recortado para só a borda aparecer. */
+.avatar-deco[data-deco="chamas"]::before,
+.avatar-deco[data-deco="arco-iris"]::before,
+.avatar-deco[data-deco="gelo"]::before {
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - var(--ring)), #000 calc(100% - var(--ring) + 0.5px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - var(--ring)), #000 calc(100% - var(--ring) + 0.5px));
+}
+
+.avatar-deco[data-deco="chamas"]::before {
+  background: conic-gradient(#ff1f00, #ffb000, #ff5a1f, #ffd000, #ff2d00, #ff9a00, #ff1f00);
+  animation: spin 2.4s linear infinite;
+}
+
+.avatar-deco[data-deco="chamas"]::after {
+  inset: 8%;
+  box-shadow: 0 0 calc(var(--avatar-size) * 0.18) rgba(255, 90, 20, 0.8);
+  animation: deco-flicker 0.9s ease-in-out infinite alternate;
+}
+
+.avatar-deco[data-deco="arco-iris"]::before {
+  background: conic-gradient(#ff5f6d, #ffc371, #47e891, #4fa9ff, #b56cff, #ff5f6d);
+  animation: spin 4s linear infinite;
+}
+
+.avatar-deco[data-deco="gelo"]::before {
+  background: conic-gradient(#e6fbff, #7fd8ff, #c9f1ff, #4fb6ff, #e6fbff, #9be3ff, #e6fbff);
+  animation: spin 7s linear infinite;
+}
+
+.avatar-deco[data-deco="gelo"]::after {
+  content: "\2744";
+  inset: auto;
+  top: -8%;
+  right: -6%;
+  border-radius: 0;
+  color: #e6f8ff;
+  font-size: calc(var(--avatar-size) * 0.3);
+  line-height: 1;
+  text-shadow: 0 0 4px #7fd8ff;
+  animation: deco-float 3s ease-in-out infinite;
+}
+
+.avatar-deco[data-deco="orbita"]::before {
+  inset: 4%;
+  border: 1.5px solid color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.avatar-deco[data-deco="orbita"]::after {
+  background: radial-gradient(circle at 50% 6%, #fff 0, var(--accent) 5%, transparent 7.5%);
+  filter: drop-shadow(0 0 3px var(--accent));
+  animation: spin 3.2s linear infinite;
+}
+
+.avatar-deco[data-deco="neon"]::before {
+  inset: 5%;
+  border: var(--ring) solid #3cf2ff;
+  animation: deco-neon 2.4s ease-in-out infinite;
+}
+
+.avatar-deco[data-deco="brilhos"] {
+  box-shadow: inset 0 0 0 1.5px rgba(255, 214, 102, 0.55);
+}
+
+.avatar-deco[data-deco="brilhos"]::before,
+.avatar-deco[data-deco="brilhos"]::after {
+  content: "\2726";
+  inset: auto;
+  border-radius: 0;
+  color: #ffe27a;
+  font-size: calc(var(--avatar-size) * 0.34);
+  line-height: 1;
+  text-shadow: 0 0 4px #ffd34d;
+  animation: deco-twinkle 1.6s ease-in-out infinite;
+}
+
+.avatar-deco[data-deco="brilhos"]::before {
+  top: -4%;
+  right: -2%;
+}
+
+.avatar-deco[data-deco="brilhos"]::after {
+  bottom: 0;
+  left: -4%;
+  font-size: calc(var(--avatar-size) * 0.24);
+  animation-delay: 0.8s;
+}
+
+.avatar-deco[data-deco="coroa"]::before {
+  content: "\1F451";
+  inset: auto;
+  top: -30%;
+  left: -14%;
+  border-radius: 0;
+  font-size: calc(var(--avatar-size) * 0.46);
+  line-height: 1;
+  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.45));
+  animation: deco-bob 2.6s ease-in-out infinite;
+}
+
+.avatar-deco[data-deco="coroa"]::after {
+  inset: 6%;
+  box-shadow: inset 0 0 0 1.5px rgba(255, 207, 64, 0.6);
+}
+
+@keyframes deco-flicker {
+  from {
+    opacity: 0.5;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes deco-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-14%);
+  }
+}
+
+@keyframes deco-twinkle {
+  0%,
+  100% {
+    transform: scale(0.6) rotate(0deg);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1.1) rotate(45deg);
+    opacity: 1;
+  }
+}
+
+@keyframes deco-bob {
+  0%,
+  100% {
+    transform: rotate(-22deg) translateY(0);
+  }
+  50% {
+    transform: rotate(-15deg) translateY(-8%);
+  }
+}
+
+@keyframes deco-neon {
+  0%,
+  100% {
+    border-color: #3cf2ff;
+    box-shadow:
+      0 0 6px #3cf2ff,
+      inset 0 0 4px #3cf2ff;
+  }
+  50% {
+    border-color: #ff4fd8;
+    box-shadow:
+      0 0 8px #ff4fd8,
+      inset 0 0 4px #ff4fd8;
+  }
+}
+
+/* ---------- Placas do nome (lista de membros) ---------- */
+
+.member.has-plate {
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.member.has-plate::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  opacity: 0.85;
+  -webkit-mask: linear-gradient(90deg, rgba(0, 0, 0, 0.35), #000 65%);
+  mask: linear-gradient(90deg, rgba(0, 0, 0, 0.35), #000 65%);
+  transition: opacity 0.12s;
+}
+
+.member.has-plate:hover::before {
+  opacity: 1;
+}
+
+.member.has-plate .you-tag {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.member.has-plate .name-fx-gradient,
+.member.has-plate .name-fx-shimmer,
+.member.has-plate .name-fx-rainbow {
+  filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.75));
+}
+
+.member[data-plate="por-do-sol"]::before {
+  background:
+    radial-gradient(circle at 88% 125%, #ffd36e 0 20%, transparent 21%),
+    linear-gradient(90deg, #5b1a4a, #e8505b 55%, #f9a65a);
+}
+
+.member[data-plate="oceano"]::before {
+  background:
+    repeating-radial-gradient(circle at 100% 140%, rgba(255, 255, 255, 0.14) 0 2px, transparent 2px 10px),
+    linear-gradient(90deg, #06283d, #1363a4 60%, #1fb4d6);
+}
+
+.member[data-plate="galaxia"]::before {
+  background:
+    radial-gradient(circle at 22% 30%, #fff 0.6px, transparent 1.4px),
+    radial-gradient(circle at 48% 72%, #fff 0.6px, transparent 1.4px),
+    radial-gradient(circle at 63% 28%, #fff 0.8px, transparent 1.6px),
+    radial-gradient(circle at 81% 62%, #fff 0.6px, transparent 1.4px),
+    radial-gradient(circle at 93% 22%, #fff 0.8px, transparent 1.6px),
+    radial-gradient(60% 140% at 85% 50%, rgba(181, 108, 255, 0.75), transparent),
+    linear-gradient(90deg, #0d0a26, #2b1361);
+}
+
+.member[data-plate="floresta"]::before {
+  background:
+    repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.06) 0 6px, transparent 6px 14px),
+    linear-gradient(90deg, #0b2615, #1f6b3a 60%, #58b368);
+}
+
+.member[data-plate="synthwave"]::before {
+  background:
+    repeating-linear-gradient(90deg, rgba(60, 242, 255, 0.35) 0 1px, transparent 1px 16px),
+    repeating-linear-gradient(0deg, rgba(255, 79, 216, 0.35) 0 1px, transparent 1px 9px),
+    linear-gradient(90deg, #12052b, #3b0a5c 60%, #ff4fd8);
+}
+
+.member[data-plate="lava"]::before {
+  background: linear-gradient(90deg, #2a0700, #c22b00, #ff7a00, #c22b00, #2a0700);
+  background-size: 300% 100%;
+  animation: name-slide 7s linear infinite;
+}
+
+.plate-preview {
+  pointer-events: none;
+}
+
+/* ---------- Cartão de perfil ---------- */
+
+.profile-popover {
+  position: fixed;
+  z-index: 60;
+  filter: drop-shadow(0 18px 40px rgba(0, 0, 0, 0.55));
+}
+
+.profile-card {
+  --card-bg: var(--bg-solid);
+  position: relative;
+  width: 300px;
+  max-width: calc(100vw - 24px);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card-bg);
+}
+
+.profile-card.has-theme {
+  --card-bg: color-mix(in srgb, var(--card-1) 55%, #101014);
+  border-color: color-mix(in srgb, var(--card-2) 50%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--card-1) 55%, #101014),
+    color-mix(in srgb, var(--card-2) 55%, #101014)
+  );
+}
+
+.profile-banner {
+  position: relative;
+  height: 104px;
+  overflow: hidden;
+}
+
+.profile-banner img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.profile-avatar {
+  position: relative;
+  z-index: 1;
+  width: fit-content;
+  margin: -46px 0 0 16px;
+}
+
+.profile-avatar .avatar {
+  box-shadow: 0 0 0 6px var(--card-bg);
+}
+
+.profile-avatar .avatar.is-online::after {
+  border-color: var(--card-bg);
+  border-width: 4px;
+}
+
+.profile-body {
+  position: relative;
+  z-index: 1;
+  margin: 10px 12px 12px;
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.profile-name {
+  display: inline-block;
+  max-width: 100%;
+  font-size: 20px;
+  font-weight: 750;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.profile-body .section-title {
+  margin: 14px 0 6px;
+}
+
+.profile-bio {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 14px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.profile-edit {
+  width: 100%;
+  margin-top: 14px;
+}
+
+/* ---------- Efeitos do perfil ----------
+   Camadas de pontos que se repetem a cada --tile e deslizam exatamente um --tile
+   por ciclo: a animação volta ao início sem emenda visível. */
+
+.profile-effect {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.profile-effect::before,
+.profile-effect::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-size: var(--tile) var(--tile);
+}
+
+@keyframes fx-fall {
+  to {
+    background-position: 0 var(--tile);
+  }
+}
+
+@keyframes fx-rise {
+  to {
+    background-position: 0 calc(var(--tile) * -1);
+  }
+}
+
+@keyframes fx-twinkle {
+  from {
+    opacity: 0.15;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fx-aurora {
+  from {
+    transform: translate(-6%, -4%) rotate(-4deg);
+  }
+  to {
+    transform: translate(6%, 5%) rotate(5deg);
+  }
+}
+
+.profile-effect[data-effect="neve"]::before {
+  --tile: 120px;
+  background-image:
+    radial-gradient(circle at 10px 20px, #fff 1.6px, transparent 2.4px),
+    radial-gradient(circle at 70px 50px, #fff 1.2px, transparent 2px),
+    radial-gradient(circle at 40px 95px, #fff 2px, transparent 2.8px),
+    radial-gradient(circle at 100px 10px, #fff 1px, transparent 1.8px),
+    radial-gradient(circle at 95px 80px, #fff 1.5px, transparent 2.3px);
+  opacity: 0.85;
+  animation: fx-fall 6s linear infinite;
+}
+
+.profile-effect[data-effect="neve"]::after {
+  --tile: 190px;
+  background-image:
+    radial-gradient(circle at 30px 40px, #fff 2.4px, transparent 3.4px),
+    radial-gradient(circle at 140px 120px, #fff 2px, transparent 3px),
+    radial-gradient(circle at 90px 170px, #fff 2.6px, transparent 3.6px);
+  opacity: 0.55;
+  filter: blur(0.6px);
+  animation: fx-fall 11s linear infinite;
+}
+
+.profile-effect[data-effect="brasas"] {
+  background: linear-gradient(0deg, rgba(255, 90, 20, 0.25), transparent 45%);
+}
+
+.profile-effect[data-effect="brasas"]::before {
+  --tile: 110px;
+  background-image:
+    radial-gradient(circle at 15px 30px, #ffd36e 1.4px, rgba(255, 120, 30, 0.5) 3px, transparent 4.5px),
+    radial-gradient(circle at 75px 80px, #ffb347 1.2px, rgba(255, 90, 20, 0.45) 2.6px, transparent 4px),
+    radial-gradient(circle at 50px 10px, #ffe08a 1px, rgba(255, 120, 30, 0.4) 2.2px, transparent 3.5px),
+    radial-gradient(circle at 98px 55px, #ff9a3c 1.4px, rgba(255, 80, 10, 0.45) 2.8px, transparent 4.2px);
+  animation: fx-rise 5s linear infinite;
+}
+
+.profile-effect[data-effect="brasas"]::after {
+  --tile: 170px;
+  background-image:
+    radial-gradient(circle at 40px 120px, #ffd36e 1.8px, rgba(255, 120, 30, 0.45) 3.4px, transparent 5px),
+    radial-gradient(circle at 130px 40px, #ffb347 1.5px, rgba(255, 90, 20, 0.4) 3px, transparent 4.6px);
+  opacity: 0.75;
+  animation: fx-rise 8s linear infinite;
+}
+
+.profile-effect[data-effect="estrelas"]::before,
+.profile-effect[data-effect="estrelas"]::after {
+  --tile: 100%;
+  background-repeat: no-repeat;
+  animation: fx-twinkle 2.4s ease-in-out infinite alternate;
+}
+
+.profile-effect[data-effect="estrelas"]::before {
+  background-image:
+    radial-gradient(circle at 12% 18%, #fff 1px, transparent 2.2px),
+    radial-gradient(circle at 34% 8%, #fff 1.4px, transparent 2.6px),
+    radial-gradient(circle at 78% 14%, #fff 1px, transparent 2.2px),
+    radial-gradient(circle at 90% 46%, #fff 1.2px, transparent 2.4px),
+    radial-gradient(circle at 8% 62%, #fff 1.2px, transparent 2.4px),
+    radial-gradient(circle at 56% 88%, #fff 1px, transparent 2.2px),
+    radial-gradient(circle at 84% 82%, #fff 1.4px, transparent 2.6px);
+}
+
+.profile-effect[data-effect="estrelas"]::after {
+  background-image:
+    radial-gradient(circle at 22% 40%, #fff6c8 1.4px, transparent 2.8px),
+    radial-gradient(circle at 62% 24%, #fff6c8 1px, transparent 2.2px),
+    radial-gradient(circle at 70% 60%, #fff6c8 1.2px, transparent 2.4px),
+    radial-gradient(circle at 30% 82%, #fff6c8 1.2px, transparent 2.4px),
+    radial-gradient(circle at 94% 8%, #fff6c8 1px, transparent 2.2px);
+  animation-delay: 1.2s;
+}
+
+.profile-effect[data-effect="bolhas"]::before {
+  --tile: 130px;
+  background-image:
+    radial-gradient(circle at 20px 40px, transparent 5px, rgba(255, 255, 255, 0.55) 6px, transparent 7.5px),
+    radial-gradient(circle at 85px 100px, transparent 8px, rgba(255, 255, 255, 0.45) 9px, transparent 10.5px),
+    radial-gradient(circle at 60px 15px, transparent 3px, rgba(255, 255, 255, 0.6) 4px, transparent 5.5px),
+    radial-gradient(circle at 110px 70px, transparent 4px, rgba(180, 230, 255, 0.6) 5px, transparent 6.5px);
+  animation: fx-rise 7s linear infinite;
+}
+
+.profile-effect[data-effect="bolhas"]::after {
+  --tile: 200px;
+  background-image:
+    radial-gradient(circle at 50px 150px, transparent 10px, rgba(255, 255, 255, 0.35) 11px, transparent 12.5px),
+    radial-gradient(circle at 160px 60px, transparent 6px, rgba(180, 230, 255, 0.45) 7px, transparent 8.5px);
+  opacity: 0.8;
+  animation: fx-rise 12s linear infinite;
+}
+
+.profile-effect[data-effect="aurora"]::before {
+  inset: -30%;
+  background:
+    radial-gradient(40% 30% at 30% 30%, rgba(60, 255, 180, 0.38), transparent 70%),
+    radial-gradient(35% 28% at 70% 25%, rgba(120, 90, 255, 0.38), transparent 70%),
+    radial-gradient(45% 30% at 50% 62%, rgba(40, 200, 255, 0.24), transparent 70%);
+  filter: blur(8px);
+  mix-blend-mode: screen;
+  animation: fx-aurora 9s ease-in-out infinite alternate;
+}
+
+/* ---------- Janela de configurações ---------- */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.settings {
+  width: min(100%, 1040px);
+  height: min(100%, 760px);
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-solid);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+}
+
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 20px 10px;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.settings-nav .section-title {
+  margin: 0 10px 10px;
+}
+
+.settings-nav hr {
+  width: 100%;
+  margin: 10px 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.settings-tab {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-muted);
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.settings-tab.is-active {
+  background: var(--bg-active);
+  color: var(--text);
+}
+
+.settings-tab.is-danger {
+  color: var(--danger);
+}
+
+.settings-content {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 14px 12px 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-header h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.settings-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px 24px 0;
+}
+
+.settings-hint {
+  margin: 0 0 10px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.settings-section-list {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding-bottom: 24px;
+}
+
+.settings-section-list .field-label {
+  margin-bottom: 10px;
+}
+
+.button-row,
+.color-row,
+.chip-row,
+.swatch-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.color-row {
+  gap: 8px 16px;
+  margin-top: 10px;
+}
+
+.color-field,
+.switch-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-soft);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.color-field input[type="color"] {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
+}
+
+.color-field input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 3px;
+}
+
+.color-field input[type="color"]::-webkit-color-swatch {
+  border: 0;
+  border-radius: 5px;
+}
+
+.color-field input[type="color"]::-moz-color-swatch {
+  border: 0;
+  border-radius: 5px;
+}
+
+.switch-field input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
+.chip {
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-soft);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.chip:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.chip.is-selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+/* ---------- Editor de perfil ---------- */
+
+.profile-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  align-items: start;
+  gap: 0 28px;
+}
+
+.profile-form {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding-bottom: 24px;
+}
+
+.editor-section .field-label {
+  margin-bottom: 8px;
+}
+
+.profile-preview {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 24px;
+}
+
+.profile-preview .profile-card {
+  width: 100%;
+}
+
+.profile-preview .field-label {
+  margin-top: 6px;
+}
+
+.preview-message {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  column-gap: 12px;
+  padding: 10px;
+  border-radius: 10px;
+  background: var(--bg-main);
+}
+
+.pair-swatch {
+  width: 36px;
+  height: 36px;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+}
+
+.pair-swatch.is-none {
+  background:
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.08) 0 4px, transparent 4px 8px),
+    var(--bg-elevated);
+}
+
+.pair-swatch.is-selected {
+  border-color: var(--text);
+}
+
+.bio-input {
+  min-height: 80px;
+  resize: vertical;
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.char-count {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-faint);
+  font-size: 12px;
+  text-align: right;
+}
+
+.option-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 8px;
+}
+
+.option-grid.is-wide {
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+}
+
+.option-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 8px 8px;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-soft);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.option-tile:hover {
+  background: var(--bg-hover);
+}
+
+.option-tile.is-selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.option-tile-preview {
+  width: 100%;
+  min-height: 64px;
+  display: grid;
+  place-items: center;
+}
+
+.option-grid.is-wide .option-tile-preview {
+  min-height: 44px;
+}
+
+.effect-preview {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  display: block;
+  overflow: hidden;
+  border-radius: 10px;
+  background: linear-gradient(160deg, #2a2a36, #121218);
+}
+
+.save-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 -8px 16px;
+  padding: 10px 12px 10px 16px;
+  border-radius: 10px;
+  background: #0b0b0e;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+  font-size: 14px;
+}
+
+.save-bar.is-error {
+  color: #ff8d9b;
+  box-shadow:
+    inset 3px 0 0 var(--danger),
+    0 8px 30px rgba(0, 0, 0, 0.5);
+}
+
+.save-bar-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.save-bar .button-primary {
+  width: auto;
+  padding: 8px 16px;
+}
+
+/* ---------- Temas ---------- */
+
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.theme-swatch {
+  position: relative;
+  height: 72px;
+  display: flex;
+  align-items: flex-end;
+  padding: 8px 10px;
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.theme-swatch.is-selected {
+  border-color: var(--swatch-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--swatch-accent) 35%, transparent);
+}
+
+.theme-swatch-dot {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--swatch-accent);
+  box-shadow: 0 0 10px var(--swatch-accent);
+}
+
+@media (max-width: 760px) {
+  .modal-backdrop {
+    padding: 0;
+  }
+
+  .settings {
+    width: 100%;
+    height: 100dvh;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    border: 0;
+    border-radius: 0;
+  }
+
+  .settings-nav {
+    flex-direction: row;
+    gap: 4px;
+    padding: 8px;
+    overflow-x: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .settings-nav .section-title,
+  .settings-nav hr {
+    display: none;
+  }
+
+  .settings-tab {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  .settings-body {
+    padding: 16px 16px 0;
+  }
+
+  .profile-editor {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .profile-preview {
+    position: static;
+    order: -1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .avatar-deco::before,
+  .avatar-deco::after,
+  .profile-effect::before,
+  .profile-effect::after,
+  .name-fx,
+  .member.has-plate::before {
+    animation: none !important;
+  }
+}

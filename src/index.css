@@ -13,10 +13,14 @@
   --text-muted: #a3a3ae;
   --text-faint: #72727e;
 
+  /* O tema (src/lib/theme.js) troca só --accent; o resto deriva dele. */
   --accent: #ff6a3d;
-  --accent-button: #d9481e;
-  --accent-button-hover: #e85a2c;
-  --accent-soft: rgba(255, 106, 61, 0.16);
+  --accent-button: color-mix(in srgb, var(--accent) 80%, #000);
+  --accent-button-hover: color-mix(in srgb, var(--accent) 90%, #000);
+  --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+  --accent-glow: color-mix(in srgb, var(--accent) 45%, transparent);
+  /* Fundo opaco para o que flutua por cima (gavetas, cartões, janelas). */
+  --bg-solid: #16161a;
   --success: #3ccf72;
   --danger: #f04a5c;
   --danger-soft: rgba(240, 74, 92, 0.16);
@@ -30,6 +34,20 @@
   --font: "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
 
   color-scheme: dark;
+}
+
+/* Tema com fundo em gradiente: os painéis ficam translúcidos para o gradiente aparecer. */
+:root[data-gradient] {
+  --bg-app: rgba(0, 0, 0, 0.34);
+  --bg-sidebar: rgba(0, 0, 0, 0.3);
+  --bg-main: rgba(0, 0, 0, 0.12);
+  --bg-elevated: rgba(255, 255, 255, 0.07);
+  --bg-stage: rgba(0, 0, 0, 0.22);
+  --bg-solid: color-mix(in srgb, var(--app-grad-1) 55%, #0b0b0e);
+}
+
+:root[data-gradient] body {
+  background: linear-gradient(150deg, var(--app-grad-1), var(--app-grad-2));
 }
 
 *,
@@ -131,7 +149,20 @@ textarea {
   min-height: 9px;
   border-radius: 50%;
   background: var(--success);
-  border: 2px solid var(--bg-sidebar);
+  border: 2px solid var(--bg-solid);
+  z-index: 2;
+}
+
+.avatar.has-image {
+  background: transparent;
+}
+
+.avatar img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: 50%;
+  object-fit: cover;
 }
 
 .icon-button {
@@ -247,7 +278,7 @@ textarea {
   padding: 24px 16px;
   overflow-y: auto;
   background:
-    radial-gradient(1100px 560px at 15% -10%, rgba(255, 106, 61, 0.18), transparent 60%),
+    radial-gradient(1100px 560px at 15% -10%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 60%),
     radial-gradient(900px 520px at 110% 110%, rgba(112, 72, 232, 0.16), transparent 60%),
     var(--bg-app);
 }
@@ -374,6 +405,10 @@ textarea {
   font-weight: 700;
 }
 
+.sidebar-header .sound-toggle {
+  margin-left: auto;
+}
+
 .channel-list {
   flex: 1;
   min-height: 0;
@@ -452,13 +487,23 @@ textarea {
 }
 
 .voice-member {
+  width: 100%;
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 4px 6px;
+  border: 0;
   border-radius: 6px;
+  background: none;
   color: var(--text-muted);
   font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.voice-member:hover {
+  background: var(--bg-hover);
+  color: var(--text);
 }
 
 .voice-member-name {
@@ -537,6 +582,26 @@ textarea {
 
 .user-panel .avatar.is-online::after {
   border-color: var(--bg-app);
+}
+
+.user-panel-me {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: -4px 0 -4px -4px;
+  padding: 4px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.user-panel-me:hover {
+  background: var(--bg-hover);
 }
 
 .user-panel-info {
@@ -854,7 +919,7 @@ textarea {
 }
 
 .composer:focus-within {
-  border-color: rgba(255, 106, 61, 0.45);
+  border-color: var(--accent-glow);
 }
 
 .composer-row {
@@ -1121,12 +1186,20 @@ textarea {
 }
 
 .member {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 5px 8px;
+  border: 0;
   border-radius: 6px;
+  background: none;
   color: var(--text-muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .member:hover {
@@ -1427,6 +1500,7 @@ textarea {
   }
 
   .members {
+    background: var(--bg-solid);
     position: fixed;
     inset: 0 0 0 auto;
     z-index: 40;
@@ -1446,6 +1520,7 @@ textarea {
   }
 
   .sidebar {
+    background: var(--bg-solid);
     position: fixed;
     inset: 0 auto 0 0;
     z-index: 40;

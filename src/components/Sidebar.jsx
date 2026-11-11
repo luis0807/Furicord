@@ -1,14 +1,17 @@
+import { useSyncExternalStore } from "react";
 import {
+  Bell,
+  BellOff,
   Hash,
   HeadphoneOff,
   Headphones,
   LoaderCircle,
-  LogOut,
   Mic,
   MicOff,
   PhoneOff,
   ScreenShare,
   ScreenShareOff,
+  Settings,
   Signal,
   Volume2,
 } from "lucide-react";
@@ -16,12 +19,15 @@ import { useChat } from "../state/chat-context.js";
 import { useIsSpeaking, useVoice } from "../voice/voice-context.js";
 import { SELF } from "../voice/VoiceEngine.js";
 import { cls } from "../lib/cls.js";
-import { Avatar, BrandMark, IconButton } from "./ui.jsx";
+import { getSoundsEnabled, playSound, setSoundsEnabled, subscribeSounds } from "../lib/sounds.js";
+import { useOverlays } from "./overlay-context.js";
+import { Avatar, BrandMark, IconButton, UserName } from "./ui.jsx";
 
 export default function Sidebar({ onNavigate }) {
   const { state, setView } = useChat();
   const voice = useVoice();
   const isSpeaking = useIsSpeaking();
+  const { openProfile } = useOverlays();
   const { channels, view, unread } = state;
 
   function openText(id) {
@@ -42,6 +48,7 @@ export default function Sidebar({ onNavigate }) {
       <header className="sidebar-header">
         <BrandMark />
         <span>Furicord</span>
+        <SoundToggle />
       </header>
 
       <nav className="channel-list" aria-label="Canais">
@@ -81,17 +88,23 @@ export default function Sidebar({ onNavigate }) {
               {members.length > 0 && (
                 <ul className="voice-members">
                   {members.map((member) => (
-                    <li key={member.id} className="voice-member">
-                      <Avatar name={member.name} size={22} speaking={isSpeaking(member.id)} />
-                      <span className="voice-member-name">{member.name}</span>
-                      <span className="voice-member-icons">
-                        {member.sharing && <span className="live-pill">AO VIVO</span>}
-                        {member.deafened ? (
-                          <HeadphoneOff size={14} aria-label="Sem áudio" />
-                        ) : (
-                          member.muted && <MicOff size={14} aria-label="Microfone desligado" />
-                        )}
-                      </span>
+                    <li key={member.id}>
+                      <button
+                        type="button"
+                        className="voice-member"
+                        onClick={(event) => openProfile(member.name, event)}
+                      >
+                        <Avatar name={member.name} size={22} speaking={isSpeaking(member.id)} />
+                        <UserName name={member.name} className="voice-member-name" />
+                        <span className="voice-member-icons">
+                          {member.sharing && <span className="live-pill">AO VIVO</span>}
+                          {member.deafened ? (
+                            <HeadphoneOff size={14} aria-label="Sem áudio" />
+                          ) : (
+                            member.muted && <MicOff size={14} aria-label="Microfone desligado" />
+                          )}
+                        </span>
+                      </button>
                     </li>
                   ))}
                 </ul>
@@ -104,6 +117,22 @@ export default function Sidebar({ onNavigate }) {
       {showVoicePanel && <VoicePanel />}
       <UserPanel />
     </aside>
+  );
+}
+
+function SoundToggle() {
+  const enabled = useSyncExternalStore(subscribeSounds, getSoundsEnabled);
+
+  function toggle() {
+    setSoundsEnabled(!enabled);
+    // Ao ligar, toca um exemplo para a pessoa saber que funcionou.
+    if (!enabled) playSound("message", { always: true });
+  }
+
+  return (
+    <IconButton label={enabled ? "Desativar sons" : "Ativar sons"} className="sound-toggle" onClick={toggle}>
+      {enabled ? <Bell /> : <BellOff />}
+    </IconButton>
   );
 }
 
@@ -143,18 +172,26 @@ function VoicePanel() {
 }
 
 function UserPanel() {
-  const { state, logout } = useChat();
+  const { state } = useChat();
   const voice = useVoice();
+  const { openProfile, openSettings } = useOverlays();
   const micOff = voice.muted || voice.deafened;
   const online = state.status === "online";
 
   return (
     <div className="user-panel">
-      <Avatar name={state.self.name} size={32} speaking={voice.speaking.has(SELF)} online={online} />
-      <div className="user-panel-info">
-        <span className="user-panel-name">{state.self.name}</span>
-        <span className="user-panel-status">{online ? "Online" : "Reconectando…"}</span>
-      </div>
+      <button
+        type="button"
+        className="user-panel-me"
+        onClick={(event) => openProfile(state.self.name, event)}
+        title="Ver meu perfil"
+      >
+        <Avatar name={state.self.name} size={32} speaking={voice.speaking.has(SELF)} online={online} />
+        <span className="user-panel-info">
+          <UserName name={state.self.name} className="user-panel-name" />
+          <span className="user-panel-status">{online ? "Online" : "Reconectando…"}</span>
+        </span>
+      </button>
       <IconButton
         label={micOff ? "Ligar microfone" : "Silenciar microfone"}
         danger={micOff}
@@ -169,8 +206,8 @@ function UserPanel() {
       >
         {voice.deafened ? <HeadphoneOff /> : <Headphones />}
       </IconButton>
-      <IconButton label="Sair (trocar de nome)" onClick={logout}>
-        <LogOut />
+      <IconButton label="Configurações" onClick={() => openSettings()}>
+        <Settings />
       </IconButton>
     </div>
   );

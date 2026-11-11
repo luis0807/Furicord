@@ -6,6 +6,7 @@ import { Upload } from "./models/Upload.js";
 import { isObjectId } from "./lib/http.js";
 import { createRateLimiter } from "./lib/rateLimit.js";
 import { nameKey, normalizeName } from "./lib/names.js";
+import { messageProfile, sanitizeProfile } from "./lib/profile.js";
 
 /*
  * Eventos (cliente -> servidor)
@@ -15,10 +16,11 @@ import { nameKey, normalizeName } from "./lib/names.js";
  *   voice:update { muted?, deafened?, sharing? }
  *   voice:leave
  *   rtc:signal   { to, data }   (oferta/resposta/candidato ICE, repassado sem olhar o conteúdo)
+ *   profile:update profile      -> ack { ok, profile } | { error }
  *
  * Eventos (servidor -> cliente)
  *   session      { self, channels, users, voice }   (logo após conectar/reconectar)
- *   presence     [{ name }]
+ *   presence     [{ name, profile }]
  *   voice:state  [{ id, sid, name, channelId, muted, deafened, sharing }]
  *   message:new  message
  *   typing       { channelId, name }
@@ -40,10 +42,11 @@ export function attachSocket(httpServer) {
   const voice = new Map();
 
   const allowMessage = createRateLimiter({ windowMs: 5000, max: 5 });
+  const allowProfile = createRateLimiter({ windowMs: 10_000, max: 5 });
 
   const listUsers = () =>
     [...users.values()]
-      .map((user) => ({ name: user.name }))
+      .map((user) => ({ name: user.name, profile: user.profile ?? null }))
       .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
   const listVoice = () => [...voice.values()];
   const broadcastPresence = () => io.emit("presence", listUsers());
@@ -61,11 +64,19 @@ export function attachSocket(httpServer) {
     const owner = users.get(key);
     if (owner && owner.clientId !== clientId) return next(new Error("NAME_TAKEN"));
 
-    // Registra já aqui para outro socket com o mesmo nome não passar no meio do caminho.
-    if (owner) owner.sockets.add(socket.id);
-    else users.set(key, { name, clientId, sockets: new Set([socket.id]) });
+    // O perfil vem do navegador (não há conta). Outra aba do mesmo navegador
+    // traz a versão mais recente, então ela substitui a anterior.
+    const profile = sanitizeProfile(socket.handshake.auth?.profile);
 
-    Object.assign(socket.data, { name: owner?.name ?? name, key, isNewUser: !owner });
+    // Registra já aqui para outro socket com o mesmo nome não passar no meio do caminho.
+    if (owner) {
+      owner.sockets.add(socket.id);
+      if (profile) owner.profile = profile;
+    } else {
+      users.set(key, { name, clientId, sockets: new Set([socket.id]), profile });
+    }
+
+    Object.assign(socket.data, { name: owner?.name ?? name, key });
     next();
   });
 
@@ -79,7 +90,21 @@ export function attachSocket(httpServer) {
       users: listUsers(),
       voice: listVoice(),
     });
-    if (socket.data.isNewUser) broadcastPresence();
+    // Também quando é outra aba: ela pode ter trazido um perfil mais novo.
+    broadcastPresence();
+
+    socket.on("profile:update", (payload, ack) => {
+      const respond = reply(ack);
+      const owner = users.get(key);
+      if (!owner) return respond({ error: "Sessão inválida. Recarregue a página." });
+      if (!allowProfile(key)) return respond({ error: "Calma! Espere alguns segundos para salvar de novo." });
+
+      const profile = sanitizeProfile(payload);
+      if (!profile) return respond({ error: "Perfil inválido" });
+      owner.profile = profile;
+      respond({ ok: true, profile });
+      broadcastPresence();
+    });
 
     socket.on("message:send", async (payload, ack) => {
       const respond = reply(ack);
@@ -120,7 +145,13 @@ export function attachSocket(httpServer) {
           return respond({ error: "As imagens não foram encontradas. Tente anexar de novo." });
         }
 
-        const doc = await Message.create({ channelId: channel.id, author: name, content, attachments });
+        const doc = await Message.create({
+          channelId: channel.id,
+          author: name,
+          authorProfile: messageProfile(users.get(key)?.profile),
+          content,
+          attachments,
+        });
         const message = serializeMessage(doc);
         io.emit("message:new", message);
         respond({ ok: true, message });

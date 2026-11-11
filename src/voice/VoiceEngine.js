@@ -1,4 +1,12 @@
 import { randomId } from "../lib/identity.js";
+import {
+  contentHintFor,
+  loadStreamQuality,
+  maxBitrate,
+  normalizeQuality,
+  saveStreamQuality,
+  videoConstraints,
+} from "../lib/streamQuality.js";
 
 /*
  * Voz e transmissão de tela via WebRTC em malha (cada participante conecta direto
@@ -40,6 +48,7 @@ export class VoiceEngine {
   micPromise = null;
   micError = null;
   screenStream = null;
+  streamQuality = loadStreamQuality();
   error = null;
 
   audioContext = null;
@@ -92,6 +101,7 @@ export class VoiceEngine {
       hasMic: Boolean(this.micStream),
       micError: this.micError,
       screenStream: this.screenStream,
+      streamQuality: this.streamQuality,
       error: this.error,
       speaking: new Set(this.speaking),
       peers,
@@ -320,7 +330,7 @@ export class VoiceEngine {
     let stream;
     try {
       stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { frameRate: { ideal: 30, max: 60 } },
+        video: videoConstraints(this.streamQuality),
         audio: {
           // Áudio de jogo/vídeo não é voz: os filtros de voz estragariam o som.
           echoCancellation: false,
@@ -337,6 +347,7 @@ export class VoiceEngine {
     } catch (err) {
       // NotAllowedError = a pessoa cancelou a janela de escolha; não é erro.
       if (err.name !== "NotAllowedError") {
+        warn(err);
         this.error = "Não foi possível transmitir a tela.";
         this.changed();
       }
@@ -350,6 +361,8 @@ export class VoiceEngine {
 
     this.screenStream = stream;
     this.error = null;
+    const videoTrack = this.screenVideoTrack();
+    if (videoTrack) videoTrack.contentHint = contentHintFor(this.streamQuality);
     // O botão "Parar de compartilhar" do próprio navegador encerra a trilha.
     this.screenVideoTrack()?.addEventListener("ended", () => {
       if (this.screenStream === stream) this.stopScreenShare();
@@ -374,6 +387,32 @@ export class VoiceEngine {
     if (!peer.tr) return;
     peer.tr.video.sender.replaceTrack(this.screenVideoTrack()).catch(warn);
     peer.tr.screenAudio.sender.replaceTrack(this.screenAudioTrack()).catch(warn);
+    this.applyVideoEncoding(peer);
+  }
+
+  // Sem isso o navegador limita a tela em ~2,5 Mbps, pouco para 1080p/60.
+  applyVideoEncoding(peer) {
+    const sender = peer.tr?.video.sender;
+    if (!sender || peer.closed) return;
+    const params = sender.getParameters();
+    // Antes da negociação terminar ainda não há encodings; chamamos de novo depois.
+    if (!params.encodings?.length) return;
+    params.encodings[0].maxBitrate = maxBitrate(this.streamQuality);
+    params.encodings[0].maxFramerate = this.streamQuality.fps;
+    sender.setParameters(params).catch(warn);
+  }
+
+  setStreamQuality(quality) {
+    this.streamQuality = normalizeQuality(quality);
+    saveStreamQuality(this.streamQuality);
+    // Transmitindo agora: ajusta na hora, sem precisar parar e começar de novo.
+    const track = this.screenVideoTrack();
+    if (track) {
+      track.contentHint = contentHintFor(this.streamQuality);
+      track.applyConstraints(videoConstraints(this.streamQuality)).catch(warn);
+      for (const peer of this.peers.values()) this.applyVideoEncoding(peer);
+    }
+    this.changed();
   }
 
   // --- Conexões com cada participante -------------------------------------------
@@ -474,6 +513,8 @@ export class VoiceEngine {
         await pc.setLocalDescription();
         this.signal(peer, { description: pc.localDescription.toJSON() });
       }
+      // Negociação concluída (dos dois lados): agora dá para aplicar o bitrate.
+      this.applyVideoEncoding(peer);
     } else if (data.candidate) {
       await pc.addIceCandidate(data.candidate).catch(warn);
     }

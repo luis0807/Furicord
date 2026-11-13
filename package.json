@@ -7,9 +7,11 @@
     "dev": "vite",
     "dev:server": "npm --prefix server run dev",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "tauri": "tauri"
   },
   "dependencies": {
+    "@tauri-apps/plugin-autostart": "^2.7.0",
     "@vercel/analytics": "^2.0.1",
     "lucide-react": "^1.70.0",
     "react": "^19.3.1",
@@ -17,6 +19,7 @@
     "socket.io-client": "^4.8.4"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.12.4",
     "@vitejs/plugin-react": "^6.2.1",
     "vite": "^8.3.6"
   }

@@ -4,6 +4,7 @@ import { SERVER_URL } from "../lib/config.js";
 import { fetchMessages } from "../lib/api.js";
 import { getSavedView, getToken, rememberToken, saveView } from "../lib/identity.js";
 import { playSound } from "../lib/sounds.js";
+import { notifyMessage } from "../lib/notifications.js";
 import { clearLegacyProfile, takeLegacyProfile } from "../lib/profile.js";
 import { ChatContext, ProfilesContext } from "./chat-context.js";
 import { TYPING_TTL_MS, chatReducer, createInitialState } from "./chatReducer.js";
@@ -88,9 +89,19 @@ export function ChatProvider({ login, onIdentity, onRejected, onLogout, children
     client.on("turn:alert", (alert) => dispatch({ type: "turnAlert", alert }));
     client.on("message:new", (message) => {
       // Igual ao Discord: não toca se você está olhando para esse canal agora.
-      const { self, view } = stateRef.current;
-      const watching = view?.type === "text" && view.id === message.channelId && document.hasFocus();
+      const { self, view, channels } = stateRef.current;
+      const focused = document.hasFocus();
+      const watching = view?.type === "text" && view.id === message.channelId && focused;
       if (message.author !== self?.name && !watching) playSound("message");
+      // Notificação só com o Furicord em segundo plano; na frente, o som e o canal marcado bastam.
+      if (message.author !== self?.name && !focused) {
+        const channel = channels.text.find((item) => item.id === message.channelId);
+        notifyMessage(message, channel?.name ?? "canal", () => {
+          const next = { type: "text", id: message.channelId };
+          saveView(next);
+          dispatch({ type: "view", view: next });
+        });
+      }
       dispatch({ type: "message", message });
     });
     client.on("typing", ({ channelId, name: who }) =>

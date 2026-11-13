@@ -1,0 +1,15 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "furicord-web",
+  "description": "O que a página do Furicord (carregada do Vercel) pode pedir ao app",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["https://furicord.vercel.app/*"]
+  },
+  "permissions": [
+    "autostart:allow-is-enabled",
+    "autostart:allow-enable",
+    "autostart:allow-disable",
+    "notification:default"
+  ]
+}

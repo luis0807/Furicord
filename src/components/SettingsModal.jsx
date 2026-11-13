@@ -1,5 +1,17 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { Activity, Copy, Eye, EyeOff, KeyRound, LogOut, MonitorUp, Palette, UserRound, X } from "lucide-react";
+import {
+  Activity,
+  Copy,
+  Eye,
+  EyeOff,
+  KeyRound,
+  LogOut,
+  MonitorUp,
+  Palette,
+  SlidersHorizontal,
+  UserRound,
+  X,
+} from "lucide-react";
 import { useChat } from "../state/chat-context.js";
 import { useVoice } from "../voice/voice-context.js";
 import { cls } from "../lib/cls.js";
@@ -7,6 +19,13 @@ import { getToken, normalizeName } from "../lib/identity.js";
 import { THEMES, applyTheme, loadTheme, resolveTheme, saveTheme } from "../lib/theme.js";
 import { STREAM_FPS, STREAM_RESOLUTIONS } from "../lib/streamQuality.js";
 import { getSoundsEnabled, playSound, setSoundsEnabled, subscribeSounds } from "../lib/sounds.js";
+import {
+  getNotificationsEnabled,
+  notificationsSupported,
+  setNotificationsEnabled,
+  subscribeNotifications,
+} from "../lib/notifications.js";
+import { getStartWithSystem, isDesktop, setStartWithSystem } from "../lib/desktop.js";
 import { IconButton } from "./ui.jsx";
 import ProfileEditor from "./ProfileEditor.jsx";
 import TurnStatsPanel from "./TurnStatsPanel.jsx";
@@ -15,6 +34,7 @@ const FORGET_WARNING =
   "Sair e fazer este navegador esquecer a conta?\n\nPara entrar de novo aqui, você vai precisar do código de acesso. Se ainda não guardou, cancele e copie o código nesta aba.";
 
 const TABS = [
+  { id: "geral", label: "Geral", icon: SlidersHorizontal },
   { id: "conta", label: "Conta", icon: KeyRound },
   { id: "perfil", label: "Perfil", icon: UserRound },
   { id: "aparencia", label: "Aparência", icon: Palette },
@@ -89,6 +109,7 @@ export default function SettingsModal({ initialTab = "perfil", onClose }) {
                 }}
               />
             )}
+            {tab === "geral" && <GeneralTab />}
             {tab === "conta" && <AccountTab />}
             {tab === "aparencia" && <AppearanceTab />}
             {tab === "voz" && <VoiceTab />}
@@ -97,6 +118,99 @@ export default function SettingsModal({ initialTab = "perfil", onClose }) {
         </section>
       </div>
     </div>
+  );
+}
+
+// --- Geral --------------------------------------------------------------------
+
+function GeneralTab() {
+  const notificationsOn = useSyncExternalStore(subscribeNotifications, getNotificationsEnabled);
+  const [notificationsError, setNotificationsError] = useState(null);
+
+  async function toggleNotifications(value) {
+    setNotificationsError(null);
+    const ok = await setNotificationsEnabled(value);
+    if (!ok) {
+      setNotificationsError(
+        isDesktop
+          ? "O Windows bloqueou as notificações do Furicord. Libere em Configurações do Windows → Sistema → Notificações e tente de novo."
+          : "O navegador bloqueou as notificações do Furicord. Libere no cadeado ao lado do endereço e tente de novo.",
+      );
+    }
+  }
+
+  return (
+    <div className="settings-section-list">
+      <section>
+        <h3 className="field-label">Notificações</h3>
+        <label className="switch-field">
+          <input
+            type="checkbox"
+            checked={notificationsOn}
+            disabled={!notificationsSupported}
+            onChange={(event) => toggleNotifications(event.target.checked)}
+          />
+          Habilitar notificações
+        </label>
+        <p className="settings-hint">
+          {notificationsSupported
+            ? "Avisa das mensagens novas quando o Furicord não está em primeiro plano."
+            : "Este navegador não mostra notificações."}
+        </p>
+        {notificationsError && (
+          <p className="form-error" role="status">
+            {notificationsError}
+          </p>
+        )}
+      </section>
+
+      {isDesktop && <StartWithSystemSection />}
+    </div>
+  );
+}
+
+function StartWithSystemSection() {
+  const [on, setOn] = useState(null); // null = ainda lendo do Windows
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    getStartWithSystem()
+      .then((value) => alive && setOn(value))
+      .catch(() => alive && setError("Não foi possível ler essa opção."));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  async function toggle(value) {
+    setError(null);
+    try {
+      setOn(await setStartWithSystem(value));
+    } catch {
+      setError("Não foi possível mudar essa opção.");
+    }
+  }
+
+  return (
+    <section>
+      <h3 className="field-label">Sistema</h3>
+      <label className="switch-field">
+        <input
+          type="checkbox"
+          checked={Boolean(on)}
+          disabled={on === null}
+          onChange={(event) => toggle(event.target.checked)}
+        />
+        Iniciar com o sistema
+      </label>
+      <p className="settings-hint">Ao ligar o computador, o Furicord abre sozinho, minimizado na bandeja.</p>
+      {error && (
+        <p className="form-error" role="status">
+          {error}
+        </p>
+      )}
+    </section>
   );
 }
 

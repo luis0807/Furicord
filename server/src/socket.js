@@ -1,5 +1,5 @@
 import { Server } from "socket.io";
-import { CORS_ORIGIN, MAX_ATTACHMENTS, MAX_MESSAGE_LENGTH, MAX_VOICE_PEERS } from "./config.js";
+import { ADMIN_NAMES, CORS_ORIGIN, MAX_ATTACHMENTS, MAX_MESSAGE_LENGTH, MAX_VOICE_PEERS } from "./config.js";
 import { TEXT_CHANNELS, VOICE_CHANNELS, findTextChannel, findVoiceChannel } from "./channels.js";
 import { Message, serializeMessage } from "./models/Message.js";
 import { Upload } from "./models/Upload.js";
@@ -10,7 +10,7 @@ import { nameKey, normalizeName } from "./lib/names.js";
 import { messageProfile, sanitizeProfile } from "./lib/profile.js";
 import { cleanToken, clientIp, hashToken } from "./lib/accounts.js";
 import { getIceConfig } from "./lib/ice.js";
-import { addTurnUsage, turnAlert } from "./lib/turnBudget.js";
+import { addConnectionPath, addTurnUsage, turnAlert, turnStats } from "./lib/turnBudget.js";
 
 // Lista de membros: quantas contas offline ficam guardadas e quantas aparecem.
 const MAX_LOADED_ACCOUNTS = 1000;
@@ -40,14 +40,16 @@ const TURN_REPORT_MAX_BPS = 40_000_000;
  *   voice:update { muted?, deafened?, sharing? }
  *   voice:leave
  *   ice:get      -> ack { iceServers, turnLimited } | { error }
- *   turn:usage   { bytes }   (bytes recebidos pelo TURN desde o último aviso)
+ *   turn:usage   { bytes, screen }   (bytes recebidos pelo TURN desde o último aviso; screen = parte da tela)
+ *   rtc:path     { path }    (uma conexão de voz se estabeleceu: "local" | "direct" | "relay")
+ *   turn:stats   -> ack { ...turnStats() } | { error }   (só contas em ADMIN_NAMES)
  *   rtc:signal   { to, data }   (oferta/resposta/candidato ICE, repassado sem olhar o conteúdo)
  *   profile:update profile      -> ack { ok, profile } | { error }
  *   account:rename { name }     -> ack { ok, name } | { error }
  *   account:delete              -> ack { ok } | { error }
  *
  * Eventos (servidor -> cliente)
- *   session      { self: { id, name, isNew }, channels, users, voice, turnAlert }   (após conectar/reconectar)
+ *   session      { self: { id, name, isNew, isAdmin }, channels, users, voice, turnAlert }   (após conectar/reconectar)
  *   turn:alert   { month, usedGB, limitGB, alertGB, blocked }   (consumo do TURN passou de um alerta)
  *   turn:limit                  (limite mensal do TURN atingido: encerrar o que passa por ele)
  *   account:renamed { name }    (para todas as abas da conta)
@@ -84,6 +86,9 @@ export function attachSocket(httpServer) {
   const allowRename = createRateLimiter({ windowMs: 60_000, max: 3 });
   // Contas novas por IP: impede reservar um monte de nomes num script.
   const allowSignup = createRateLimiter({ windowMs: 60 * 60_000, max: 20 });
+  // Avisos de "conexão estabelecida" (só estatística): uma sala cheia gera poucos.
+  const allowPathReport = createRateLimiter({ windowMs: 60_000, max: 30 });
+  const allowStats = createRateLimiter({ windowMs: 10_000, max: 5 });
 
   const byName = (a, b) => a.name.localeCompare(b.name, "pt-BR");
   // Todos online + os offline vistos mais recentemente (para a lista não crescer sem fim).
@@ -219,6 +224,7 @@ export function attachSocket(httpServer) {
     // A função de resposta chega como último argumento — ou como o primeiro, se o
     // cliente não mandou dados (ex: account:delete). Pega a que existir.
     const reply = (...args) => args.findLast((arg) => typeof arg === "function") ?? (() => {});
+    const isAdmin = () => ADMIN_NAMES.includes(socket.data.key);
 
     const online = me();
     if (online) online.sockets.add(socket.id);
@@ -233,7 +239,7 @@ export function attachSocket(httpServer) {
     }
 
     socket.emit("session", {
-      self: { id: socket.id, name: socket.data.name, isNew: socket.data.isNew },
+      self: { id: socket.id, name: socket.data.name, isNew: socket.data.isNew, isAdmin: isAdmin() },
       channels: { text: TEXT_CHANNELS, voice: VOICE_CHANNELS },
       users: listUsers(),
       voice: listVoice(),
@@ -400,7 +406,26 @@ export function attachSocket(httpServer) {
       // Teto por aviso: um número absurdo (bug ou má-fé) não desliga o TURN de todos.
       const ceiling = (TURN_REPORT_MAX_BPS / 8) * (elapsed / 1000);
       const bytes = Math.min(Number(payload?.bytes) || 0, ceiling);
-      if (bytes > 0) addTurnUsage(bytes);
+      if (bytes > 0) addTurnUsage(bytes, { userId: socket.data.userId, screen: Number(payload?.screen) || 0 });
+    });
+
+    // Por onde uma conexão de voz passou. Só um dos dois lados avisa (ver VoiceEngine).
+    socket.on("rtc:path", (payload) => {
+      if (!voice.has(socket.id) || !allowPathReport(socket.id)) return;
+      addConnectionPath(payload?.path);
+    });
+
+    // Painel "Servidor de voz": consumo do TURN em detalhes.
+    socket.on("turn:stats", async (payload, ack) => {
+      const respond = reply(payload, ack);
+      if (!isAdmin()) return respond({ error: "Só administradores veem este painel." });
+      if (!allowStats(socket.id)) return respond({ error: "Calma! Espere alguns segundos para atualizar de novo." });
+      try {
+        respond(await turnStats());
+      } catch (err) {
+        console.error("Erro ao montar as estatísticas do TURN:", err);
+        respond({ error: "Não foi possível carregar as estatísticas. Tente de novo." });
+      }
     });
 
     socket.on("voice:join", (payload, ack) => {

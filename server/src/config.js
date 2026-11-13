@@ -40,6 +40,14 @@ export const CLOUDFLARE_ANALYTICS =
     ? { accountId: process.env.CLOUDFLARE_ACCOUNT_ID.trim(), apiToken: process.env.CLOUDFLARE_ANALYTICS_TOKEN.trim() }
     : null;
 
+// Contas que veem o painel "Servidor de voz" (consumo do TURN por dia, por pessoa,
+// por tipo de conexão), separadas por vírgula. Ex: ADMIN_NAMES=Furico
+// Vale o nome atual da conta: se ela trocar de nome, atualize aqui.
+export const ADMIN_NAMES = (process.env.ADMIN_NAMES || "")
+  .split(",")
+  .map((name) => name.trim().toLocaleLowerCase("pt-BR"))
+  .filter(Boolean);
+
 export const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
 export const MAX_MESSAGE_LENGTH = 2000;
 export const MAX_ATTACHMENTS = 10;

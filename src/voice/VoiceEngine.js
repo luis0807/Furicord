@@ -43,6 +43,16 @@ const STATS_INTERVAL_MS = 5000;
 const STATS_PER_REPORT = 6;
 const STUN_ONLY = [{ urls: "stun:stun.l.google.com:19302" }];
 
+// Os dois lados na mesma rede: candidatos locais (host), ou o remoto com IP privado
+// (o Chrome às vezes o vê como "prflx" quando o endereço local vem mascarado).
+const PRIVATE_IP = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.|169\.254\.|f[cd]|fe80|::1$)/i;
+function isLocalPair(local, remote) {
+  if (local?.candidateType !== "host") return false;
+  if (remote?.candidateType === "host") return true;
+  const address = remote?.address ?? remote?.ip ?? "";
+  return remote?.candidateType === "prflx" && PRIVATE_IP.test(address);
+}
+
 export class VoiceEngine {
   listeners = new Set();
   peers = new Map(); // socketId -> peer
@@ -52,6 +62,7 @@ export class VoiceEngine {
   iceServers = null;
   turnLimited = false; // a franquia mensal do TURN acabou
   turnBytes = 0; // recebidos pelo TURN e ainda não avisados ao servidor
+  turnScreenBytes = 0; // a parte do turnBytes que foi transmissão de tela
   statsTicks = 0;
   channelId = null; // sala em que estamos de fato
   pendingChannelId = null; // sala em que estamos tentando entrar
@@ -528,16 +539,38 @@ export class VoiceEngine {
       }
       if (!pair) continue;
 
-      const viaLocalRelay = stats.get(pair.localCandidateId)?.candidateType === "relay";
-      const relayed = viaLocalRelay || stats.get(pair.remoteCandidateId)?.candidateType === "relay";
+      const local = stats.get(pair.localCandidateId);
+      const remote = stats.get(pair.remoteCandidateId);
+      const viaLocalRelay = local?.candidateType === "relay";
+      const relayed = viaLocalRelay || remote?.candidateType === "relay";
+
+      // Quanto do que chegou é tela e quanto é voz, para o painel do servidor.
+      const media = this.mediaBytes(peer, stats);
+      const screenDelta = Math.max(0, media.screen - peer.statsScreen);
+      const mediaDelta = Math.max(0, media.total - peer.statsMedia);
+      peer.statsScreen = media.screen;
+      peer.statsMedia = media.total;
 
       const received = pair.bytesReceived ?? 0;
       if (peer.statsPairId !== pair.id) {
         peer.statsPairId = pair.id;
         peer.statsBytes = 0;
       }
-      if (viaLocalRelay) this.turnBytes += Math.max(0, received - peer.statsBytes);
+      if (viaLocalRelay) {
+        const delta = Math.max(0, received - peer.statsBytes);
+        this.turnBytes += delta;
+        // O par de candidatos conta também cabeçalhos e controle; divide na proporção.
+        if (mediaDelta > 0) this.turnScreenBytes += Math.round(delta * (screenDelta / mediaDelta));
+      }
       peer.statsBytes = received;
+
+      // Estatística de por onde as conexões passam. Só o lado de id menor avisa,
+      // para cada conexão contar uma vez.
+      const path = relayed ? "relay" : isLocalPair(local, remote) ? "local" : "direct";
+      if (path !== peer.path) {
+        peer.path = path;
+        if (this.socket.id && this.socket.id < peer.id) this.socket.emit("rtc:path", { path });
+      }
 
       if (relayed && this.turnLimited) {
         this.blockPeer(peer);
@@ -551,8 +584,27 @@ export class VoiceEngine {
   }
 
   reportTurnUsage() {
-    if (this.turnBytes > 0 && this.sid) this.socket.emit("turn:usage", { bytes: this.turnBytes });
+    if (this.turnBytes > 0 && this.sid) {
+      this.socket.emit("turn:usage", { bytes: this.turnBytes, screen: Math.min(this.turnScreenBytes, this.turnBytes) });
+    }
     this.turnBytes = 0;
+    this.turnScreenBytes = 0;
+  }
+
+  // Bytes de mídia recebidos desta pessoa, separando a tela (vídeo e áudio da tela)
+  // da voz. Sem trackIdentifier (navegadores antigos), vídeo conta como tela.
+  mediaBytes(peer, stats) {
+    const screenTracks = new Set([peer.tr?.video?.receiver.track?.id, peer.tr?.screenAudio?.receiver.track?.id]);
+    let total = 0;
+    let screen = 0;
+    stats.forEach((report) => {
+      if (report.type !== "inbound-rtp") return;
+      const bytes = report.bytesReceived ?? 0;
+      total += bytes;
+      const isScreen = report.trackIdentifier ? screenTracks.has(report.trackIdentifier) : report.kind === "video";
+      if (isScreen) screen += bytes;
+    });
+    return { total, screen };
   }
 
   // O servidor avisou que a franquia mensal do TURN acabou: encerra as conexões que
@@ -595,6 +647,9 @@ export class VoiceEngine {
       blocked: false,
       statsPairId: null,
       statsBytes: 0,
+      statsScreen: 0, // bytes de tela recebidos (todas as trilhas de tela, acumulado)
+      statsMedia: 0, // bytes de mídia recebidos (voz + tela, acumulado)
+      path: null, // último caminho avisado ao servidor: "local" | "direct" | "relay"
       slowTimer: null,
       giveUpTimer: null,
       queue: Promise.resolve(),

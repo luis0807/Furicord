@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { Copy, Eye, EyeOff, KeyRound, LogOut, MonitorUp, Palette, UserRound, X } from "lucide-react";
+import { Activity, Copy, Eye, EyeOff, KeyRound, LogOut, MonitorUp, Palette, UserRound, X } from "lucide-react";
 import { useChat } from "../state/chat-context.js";
 import { useVoice } from "../voice/voice-context.js";
 import { cls } from "../lib/cls.js";
@@ -9,6 +9,7 @@ import { STREAM_FPS, STREAM_RESOLUTIONS } from "../lib/streamQuality.js";
 import { getSoundsEnabled, playSound, setSoundsEnabled, subscribeSounds } from "../lib/sounds.js";
 import { IconButton } from "./ui.jsx";
 import ProfileEditor from "./ProfileEditor.jsx";
+import TurnStatsPanel from "./TurnStatsPanel.jsx";
 
 const FORGET_WARNING =
   "Sair e fazer este navegador esquecer a conta?\n\nPara entrar de novo aqui, você vai precisar do código de acesso. Se ainda não guardou, cancele e copie o código nesta aba.";
@@ -19,9 +20,12 @@ const TABS = [
   { id: "aparencia", label: "Aparência", icon: Palette },
   { id: "voz", label: "Voz e vídeo", icon: MonitorUp },
 ];
+// Só para as contas em ADMIN_NAMES (no Render).
+const ADMIN_TABS = [{ id: "servidor", label: "Servidor de voz", icon: Activity }];
 
 export default function SettingsModal({ initialTab = "perfil", onClose }) {
-  const { logout } = useChat();
+  const { logout, state } = useChat();
+  const tabs = state.self?.isAdmin ? [...TABS, ...ADMIN_TABS] : TABS;
   const [tab, setTab] = useState(initialTab);
   const dirty = useRef(false); // o editor de perfil avisa quando há algo não salvo
 
@@ -42,14 +46,14 @@ export default function SettingsModal({ initialTab = "perfil", onClose }) {
     setTab(id);
   }
 
-  const current = TABS.find((item) => item.id === tab);
+  const current = tabs.find((item) => item.id === tab) ?? tabs[0];
 
   return (
     <div className="modal-backdrop" onPointerDown={(event) => event.target === event.currentTarget && close()}>
       <div className="settings" role="dialog" aria-modal="true" aria-label="Configurações">
         <nav className="settings-nav" aria-label="Seções">
           <h2 className="section-title">Configurações</h2>
-          {TABS.map(({ id, label, icon: Icon }) => (
+          {tabs.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
               type="button"
@@ -88,6 +92,7 @@ export default function SettingsModal({ initialTab = "perfil", onClose }) {
             {tab === "conta" && <AccountTab />}
             {tab === "aparencia" && <AppearanceTab />}
             {tab === "voz" && <VoiceTab />}
+            {current.id === "servidor" && <TurnStatsPanel />}
           </div>
         </section>
       </div>

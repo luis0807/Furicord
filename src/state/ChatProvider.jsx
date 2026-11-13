@@ -184,6 +184,8 @@ export function ChatProvider({ login, onIdentity, onRejected, onLogout, children
 
   const updateProfile = useCallback((profile) => request("profile:update", profile), [request]);
   const renameAccount = useCallback((name) => request("account:rename", { name }), [request]);
+  // Painel "Servidor de voz" (só administradores; o servidor confere).
+  const fetchTurnStats = useCallback(() => request("turn:stats"), [request]);
   const deleteAccount = useCallback(async () => {
     const result = await request("account:delete");
     if (result?.ok) {
@@ -206,6 +208,7 @@ export function ChatProvider({ login, onIdentity, onRejected, onLogout, children
       updateProfile,
       renameAccount,
       deleteAccount,
+      fetchTurnStats,
     }),
     [
       state,
@@ -219,6 +222,7 @@ export function ChatProvider({ login, onIdentity, onRejected, onLogout, children
       updateProfile,
       renameAccount,
       deleteAccount,
+      fetchTurnStats,
     ],
   );
 

@@ -1,5 +1,6 @@
 import { Menu, Users } from "lucide-react";
 import { IconButton } from "./ui.jsx";
+import DownloadAppButton from "./DownloadAppButton.jsx";
 
 export default function ChannelHeader({ icon, title, topic, layout }) {
   return (
@@ -16,6 +17,7 @@ export default function ChannelHeader({ icon, title, topic, layout }) {
         </>
       )}
       <div className="channel-header-actions">
+        <DownloadAppButton />
         <IconButton
           label={layout.membersOpen ? "Ocultar membros" : "Mostrar membros"}
           active={layout.membersOpen}

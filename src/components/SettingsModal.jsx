@@ -25,7 +25,8 @@ import {
   setNotificationsEnabled,
   subscribeNotifications,
 } from "../lib/notifications.js";
-import { getStartWithSystem, isDesktop, setStartWithSystem } from "../lib/desktop.js";
+import { getStartWithSystem, isDesktop, isWindows, setStartWithSystem } from "../lib/desktop.js";
+import DownloadAppButton from "./DownloadAppButton.jsx";
 import { IconButton } from "./ui.jsx";
 import ProfileEditor from "./ProfileEditor.jsx";
 import TurnStatsPanel from "./TurnStatsPanel.jsx";
@@ -164,8 +165,31 @@ function GeneralTab() {
         )}
       </section>
 
-      {isDesktop && <StartWithSystemSection />}
+      {isDesktop ? <StartWithSystemSection /> : <DesktopAppSection />}
     </div>
+  );
+}
+
+function DesktopAppSection() {
+  return (
+    <section>
+      <h3 className="field-label">App para Windows</h3>
+      <p className="settings-hint">
+        Fica na bandeja, pode abrir junto com o computador e avisa das mensagens mesmo com o navegador fechado. É
+        leve (cerca de 3 MB) e o conteúdo se atualiza junto com o site.
+      </p>
+      {isWindows ? (
+        <>
+          <DownloadAppButton label="Baixar para Windows" className="settings-download" />
+          <p className="settings-hint">
+            Na primeira vez, o Windows pode avisar que não reconhece o app: clique em <strong>Mais informações</strong>{" "}
+            → <strong>Executar assim mesmo</strong>.
+          </p>
+        </>
+      ) : (
+        <p className="settings-hint">Por enquanto, só para Windows.</p>
+      )}
+    </section>
   );
 }
 

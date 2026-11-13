@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{
     menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -10,8 +11,14 @@ use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 // Passado só quando o Windows abre o app no login: aí ele fica quieto na bandeja.
 const AUTOSTART_ARG: &str = "--minimized";
 
+static SHOWN_ONCE: AtomicBool = AtomicBool::new(false);
+
 fn show_main(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
+        // Maximiza só na primeira vez: depois, respeita o tamanho que a pessoa escolheu.
+        if !SHOWN_ONCE.swap(true, Ordering::Relaxed) {
+            let _ = window.maximize();
+        }
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
@@ -41,7 +48,7 @@ fn main() {
                 None::<&str>,
             )?;
             let separator = PredefinedMenuItem::separator(app)?;
-            let quit = MenuItem::with_id(app, "quit", "Sair", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "Encerrar o Furicord", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&open, &startup, &separator, &quit])?;
 
             let startup_item = startup.clone();

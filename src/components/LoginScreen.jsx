@@ -3,6 +3,7 @@ import { CircleCheck, KeyRound, LoaderCircle } from "lucide-react";
 import { checkName } from "../lib/api.js";
 import { getKnownTokens, isValidToken, newToken, normalizeName } from "../lib/identity.js";
 import { BrandMark } from "./ui.jsx";
+import DownloadAppButton, { canDownloadApp } from "./DownloadAppButton.jsx";
 
 // Um campo só: o nome. Enquanto a pessoa digita, o servidor confere sozinho:
 //   nome livre                       -> cria a conta
@@ -160,6 +161,13 @@ export default function LoginScreen({ initialName, error, onSubmit }) {
         >
           {submitting ? "Verificando…" : status === "free" ? "Criar conta e entrar" : "Entrar"}
         </button>
+
+        {canDownloadApp && (
+          <div className="login-download">
+            <span>Prefere usar como app, com notificações e abrindo junto com o PC?</span>
+            <DownloadAppButton label="Baixar app para Windows" />
+          </div>
+        )}
       </form>
     </main>
   );

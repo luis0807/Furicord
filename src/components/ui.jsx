@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Flame } from "lucide-react";
 import { colorFor, initialsFor } from "../lib/avatar.js";
 import { cls } from "../lib/cls.js";
 import { uploadUrl } from "../lib/config.js";
@@ -59,10 +58,11 @@ export function IconButton({ label, onClick, active, danger, disabled, className
   );
 }
 
-export function BrandMark({ size = 28 }) {
+// Proporção do viewBox de public/logo.svg.
+const LOGO_RATIO = 332.03 / 61.62;
+
+export function Logo({ height = 24 }) {
   return (
-    <span className="brand-mark" style={{ "--brand-size": `${size}px` }} aria-hidden="true">
-      <Flame size={Math.round(size * 0.6)} strokeWidth={2.4} />
-    </span>
+    <img className="brand-logo" src="/logo.svg" alt="Furicord" height={height} width={Math.round(height * LOGO_RATIO)} />
   );
 }

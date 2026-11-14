@@ -3,7 +3,7 @@ import { Copy, KeyRound, LoaderCircle, TriangleAlert, X } from "lucide-react";
 import { useChat } from "../state/chat-context.js";
 import { cls } from "../lib/cls.js";
 import { getToken } from "../lib/identity.js";
-import { BrandMark } from "./ui.jsx";
+import { Logo } from "./ui.jsx";
 import Sidebar from "./Sidebar.jsx";
 import ChannelView from "./ChannelView.jsx";
 import VoiceView from "./VoiceView.jsx";
@@ -155,7 +155,7 @@ function ConnectingScreen() {
 
   return (
     <main className="splash">
-      <BrandMark size={56} />
+      <Logo height={44} />
       <p className="splash-title">
         <LoaderCircle size={18} className="spin" /> Conectando ao Furicord…
       </p>

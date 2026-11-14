@@ -1235,6 +1235,33 @@
   color: var(--warning);
 }
 
+/* Na tela de entrada (fundo vermelho): mensagens menores e mais vivas, como no layout. */
+.login .login-status {
+  min-height: 18px;
+  margin-top: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.login .login-status .is-ok {
+  color: #52f03a;
+}
+
+.login .login-status .is-muted {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.login .login-code {
+  border-color: rgba(244, 8, 58, 0.45);
+  background: rgba(244, 8, 58, 0.08);
+}
+
+.login .login-code-hint {
+  color: rgba(255, 255, 255, 0.85);
+  font-weight: 300;
+}
+
 .login-code {
   margin-top: 14px;
   padding: 12px;

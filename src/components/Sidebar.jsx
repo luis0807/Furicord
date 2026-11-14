@@ -21,7 +21,7 @@ import { SELF } from "../voice/VoiceEngine.js";
 import { cls } from "../lib/cls.js";
 import { getSoundsEnabled, playSound, setSoundsEnabled, subscribeSounds } from "../lib/sounds.js";
 import { useOverlays } from "./overlay-context.js";
-import { Avatar, BrandMark, IconButton, UserName } from "./ui.jsx";
+import { Avatar, IconButton, Logo, UserName } from "./ui.jsx";
 
 export default function Sidebar({ onNavigate }) {
   const { state, setView } = useChat();
@@ -46,8 +46,7 @@ export default function Sidebar({ onNavigate }) {
   return (
     <aside className="sidebar">
       <header className="sidebar-header">
-        <BrandMark />
-        <span>Furicord</span>
+        <Logo height={24} />
         <SoundToggle />
       </header>
 

@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { CircleAlert, CircleCheck, KeyRound, LoaderCircle } from "lucide-react";
 import { checkName } from "../lib/api.js";
 import { getKnownTokens, isValidToken, newToken, normalizeName } from "../lib/identity.js";
-import { BrandMark } from "./ui.jsx";
 import DownloadAppButton, { canDownloadApp } from "./DownloadAppButton.jsx";
 
 const RESERVED_MESSAGE = "Esse nome é reservado (é usado para mencionar todo mundo). Escolha outro.";
@@ -83,101 +82,108 @@ export default function LoginScreen({ initialName, error, onSubmit }) {
 
   return (
     <main className="login">
-      <form className="login-card" onSubmit={handleSubmit} noValidate>
-        <div className="login-brand">
-          <BrandMark size={44} />
-          <h1>Furicord</h1>
-        </div>
-        <p className="login-lead">Digite seu nome para entrar. Se ainda não tem conta, ela é criada na hora — sem senha.</p>
+      <div className="login-stack">
+        <h1 className="login-logo">
+          <img src="/logo-login.svg" alt="Furicord" width="262" height="168" />
+        </h1>
 
-        <label className="field-label" htmlFor="login-name">
-          Nome de usuário
-        </label>
-        <input
-          id="login-name"
-          className="text-input"
-          value={name}
-          onChange={(event) => {
-            setName(event.target.value);
-            setLocalError(null);
-          }}
-          maxLength={40}
-          autoComplete="username"
-          spellCheck={false}
-          autoFocus
-          aria-invalid={Boolean(shownError)}
-          aria-describedby="login-status"
-        />
-
-        <div id="login-status" className="login-status" aria-live="polite">
-          {status === "checking" && (
-            <span className="is-muted">
-              <LoaderCircle size={14} className="spin" /> Verificando…
-            </span>
-          )}
-          {status === "free" && (
-            <span className="is-ok">
-              <CircleCheck size={14} /> Nome disponível — ele vai ser só seu.
-            </span>
-          )}
-          {status === "reserved" && (
-            <span className="is-warn">
-              <CircleAlert size={14} /> {RESERVED_MESSAGE}
-            </span>
-          )}
-          {status === "yours" && (
-            <span className="is-ok">
-              <CircleCheck size={14} /> Você já entrou com esse nome neste navegador — não precisa de código.
-            </span>
-          )}
-        </div>
-
-        {needsCode && (
-          <div className="login-code">
-            <label className="field-label" htmlFor="login-code">
-              <KeyRound size={13} /> Código de acesso
-            </label>
-            <p className="login-code-hint">
-              “{current.name}” nunca entrou neste navegador. Se for você, cole o código de acesso da conta — ele fica em
-              Configurações → Conta, no aparelho onde você já entrou.
-            </p>
-            <input
-              id="login-code"
-              className="text-input code-input"
-              value={code}
-              onChange={(event) => {
-                setCode(event.target.value);
-                setLocalError(null);
-              }}
-              placeholder="Cole o código aqui"
-              autoComplete="off"
-              spellCheck={false}
-              autoFocus
-            />
-          </div>
-        )}
-
-        {shownError && (
-          <p className="form-error" role="alert">
-            {shownError}
+        <form className="login-card" onSubmit={handleSubmit} noValidate>
+          <p className="login-lead">
+            Digite seu nome para entrar. Se ainda não tem conta, ela é criada na hora — sem senha.
           </p>
-        )}
 
-        <button
-          type="submit"
-          className="button-primary"
-          disabled={submitting || !name.trim() || status === "reserved" || (needsCode && !code.trim())}
-        >
-          {submitting ? "Verificando…" : status === "free" ? "Criar conta e entrar" : "Entrar"}
-        </button>
+          <label className="field-label" htmlFor="login-name">
+            Nome de Usuário
+          </label>
+          <input
+            id="login-name"
+            className="text-input"
+            value={name}
+            onChange={(event) => {
+              setName(event.target.value);
+              setLocalError(null);
+            }}
+            maxLength={40}
+            autoComplete="username"
+            spellCheck={false}
+            autoFocus
+            aria-invalid={Boolean(shownError)}
+            aria-describedby="login-status"
+          />
+
+          <div id="login-status" className="login-status" aria-live="polite">
+            {status === "checking" && (
+              <span className="is-muted">
+                <LoaderCircle size={14} className="spin" /> Verificando…
+              </span>
+            )}
+            {status === "free" && (
+              <span className="is-ok">
+                <CircleCheck size={14} /> Nome disponível — ele vai ser só seu.
+              </span>
+            )}
+            {status === "reserved" && (
+              <span className="is-warn">
+                <CircleAlert size={14} /> {RESERVED_MESSAGE}
+              </span>
+            )}
+            {status === "yours" && (
+              <span className="is-ok">
+                <CircleCheck size={14} /> Você já entrou com esse nome neste navegador — não precisa de código.
+              </span>
+            )}
+          </div>
+
+          {needsCode && (
+            <div className="login-code">
+              <label className="field-label" htmlFor="login-code">
+                <KeyRound size={13} /> Código de acesso
+              </label>
+              <p className="login-code-hint">
+                “{current.name}” nunca entrou neste navegador. Se for você, cole o código de acesso da conta — ele
+                fica em Configurações → Conta, no aparelho onde você já entrou.
+              </p>
+              <input
+                id="login-code"
+                className="text-input code-input"
+                value={code}
+                onChange={(event) => {
+                  setCode(event.target.value);
+                  setLocalError(null);
+                }}
+                placeholder="Cole o código aqui"
+                autoComplete="off"
+                spellCheck={false}
+                autoFocus
+              />
+            </div>
+          )}
+
+          {shownError && (
+            <p className="form-error" role="alert">
+              {shownError}
+            </p>
+          )}
+
+          <button
+            type="submit"
+            className="button-primary"
+            disabled={submitting || !name.trim() || status === "reserved" || (needsCode && !code.trim())}
+          >
+            {submitting ? "Verificando…" : status === "free" ? "Criar conta e entrar" : "Entrar"}
+          </button>
+        </form>
 
         {canDownloadApp && (
-          <div className="login-download">
-            <span>Prefere usar como app, com notificações e abrindo junto com o PC?</span>
-            <DownloadAppButton label="Baixar app para Windows" />
-          </div>
+          <>
+            <p className="login-or">ou</p>
+            <section className="login-card" aria-label="App para Windows">
+              <p className="login-lead">Prefere usar como App? Baixe agora para o seu PC Windows 10 e 11!</p>
+              <DownloadAppButton label="Baixar app para windows" />
+            </section>
+          </>
         )}
-      </form>
+      </div>
     </main>
   );
 }

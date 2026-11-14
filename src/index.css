@@ -104,15 +104,11 @@ textarea {
 
 /* ---------- Peças reutilizadas ---------- */
 
-.brand-mark {
-  width: var(--brand-size, 28px);
-  height: var(--brand-size, 28px);
-  border-radius: calc(var(--brand-size, 28px) * 0.28);
-  background: linear-gradient(135deg, #ff8a4c, #e5431f);
-  color: #fff;
-  display: inline-grid;
-  place-items: center;
+.brand-logo {
+  display: block;
   flex-shrink: 0;
+  max-width: 100%;
+  height: auto;
 }
 
 .avatar {
@@ -271,68 +267,117 @@ textarea {
 
 /* ---------- Login e tela de conexão ---------- */
 
+/* Identidade fixa da marca: não muda com o tema escolhido nas Configurações. */
 .login {
+  --login-button: #f4083a;
+  --login-button-hover: #ff2450;
+  --login-input: #e8400c;
   min-height: 100dvh;
   display: grid;
   place-items: center;
-  padding: 24px 16px;
+  padding: 28px 16px;
   overflow-y: auto;
-  background:
-    radial-gradient(1100px 560px at 15% -10%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 60%),
-    radial-gradient(900px 520px at 110% 110%, rgba(112, 72, 232, 0.16), transparent 60%),
-    var(--bg-app);
+  background: linear-gradient(135deg, #330a07, #7f150f);
+  color: #fff;
+  font-family: "Montserrat", var(--font);
+}
+
+.login-stack {
+  width: min(100%, 372px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.login-logo {
+  margin: 0 0 26px;
+  line-height: 0;
+}
+
+.login-logo img {
+  width: 262px;
+  max-width: 70vw;
+  height: auto;
 }
 
 .login-card {
-  width: min(100%, 400px);
-  padding: 32px 28px;
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  background: var(--bg-sidebar);
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
-}
-
-.login-download {
-  display: grid;
-  gap: 10px;
-  margin-top: 22px;
-  padding-top: 18px;
-  border-top: 1px solid var(--border);
-  color: var(--text-muted);
-  font-size: 13px;
-  text-align: center;
-}
-
-.login-download .download-app {
-  padding: 10px 16px;
-  font-size: 14px;
-}
-
-.login-brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 14px;
-}
-
-.login-brand h1 {
-  margin: 0;
-  font-size: 26px;
-  letter-spacing: -0.01em;
+  width: 100%;
+  padding: 24px 32px;
+  border: 1.5px solid rgba(255, 255, 255, 0.92);
+  border-radius: 18px;
+  background: linear-gradient(135deg, #030101, #2c0d0b);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.35);
 }
 
 .login-lead {
-  margin: 0 0 24px;
-  color: var(--text-muted);
+  margin: 0 0 30px;
+  font-size: 13px;
+  font-weight: 300;
+  line-height: 1.25;
 }
 
 .login-card .field-label {
-  margin-bottom: 8px;
-  color: var(--text-muted);
+  margin-bottom: 6px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.login .text-input {
+  padding: 10px 12px;
+  border: 1.5px solid var(--login-input);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-family: inherit;
+  font-weight: 500;
+}
+
+.login .text-input:focus {
+  border-color: #ff5a1f;
+  box-shadow: 0 0 0 3px rgba(232, 64, 12, 0.25);
+}
+
+.login .code-input {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+}
+
+.login-card .button-primary,
+.login .download-app {
+  width: 100%;
+  padding: 13px 16px;
+  background: var(--login-button);
+  color: #fff;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .login-card .button-primary {
   margin-top: 18px;
+  border-radius: 6px;
+}
+
+.login-card .button-primary:hover:not(:disabled),
+.login .download-app:hover {
+  background: var(--login-button-hover);
+}
+
+.login .download-app {
+  gap: 12px;
+}
+
+.login .download-app svg {
+  width: 20px;
+  height: 20px;
+}
+
+.login-or {
+  margin: 14px 0;
+  font-size: 16px;
+  font-weight: 700;
 }
 
 .splash {

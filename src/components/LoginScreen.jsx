@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
-import { CircleCheck, KeyRound, LoaderCircle } from "lucide-react";
+import { CircleAlert, CircleCheck, KeyRound, LoaderCircle } from "lucide-react";
 import { checkName } from "../lib/api.js";
 import { getKnownTokens, isValidToken, newToken, normalizeName } from "../lib/identity.js";
 import { BrandMark } from "./ui.jsx";
 import DownloadAppButton, { canDownloadApp } from "./DownloadAppButton.jsx";
+
+const RESERVED_MESSAGE = "Esse nome é reservado (é usado para mencionar todo mundo). Escolha outro.";
 
 // Um campo só: o nome. Enquanto a pessoa digita, o servidor confere sozinho:
 //   nome livre                       -> cria a conta
@@ -60,7 +62,9 @@ export default function LoginScreen({ initialName, error, onSubmit }) {
       setSubmitting(false);
     }
 
-    if (result.status === "yours") {
+    if (result.status === "reserved") {
+      setLocalError(RESERVED_MESSAGE);
+    } else if (result.status === "yours") {
       onSubmit(normalized, result.tokens[result.match]);
     } else if (result.status === "free") {
       onSubmit(normalized, newToken());
@@ -116,6 +120,11 @@ export default function LoginScreen({ initialName, error, onSubmit }) {
               <CircleCheck size={14} /> Nome disponível — ele vai ser só seu.
             </span>
           )}
+          {status === "reserved" && (
+            <span className="is-warn">
+              <CircleAlert size={14} /> {RESERVED_MESSAGE}
+            </span>
+          )}
           {status === "yours" && (
             <span className="is-ok">
               <CircleCheck size={14} /> Você já entrou com esse nome neste navegador — não precisa de código.
@@ -157,7 +166,7 @@ export default function LoginScreen({ initialName, error, onSubmit }) {
         <button
           type="submit"
           className="button-primary"
-          disabled={submitting || !name.trim() || (needsCode && !code.trim())}
+          disabled={submitting || !name.trim() || status === "reserved" || (needsCode && !code.trim())}
         >
           {submitting ? "Verificando…" : status === "free" ? "Criar conta e entrar" : "Entrar"}
         </button>

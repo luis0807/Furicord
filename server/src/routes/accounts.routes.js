@@ -2,7 +2,7 @@ import { Router } from "express";
 import { User } from "../models/User.js";
 import { HttpError } from "../lib/http.js";
 import { createRateLimiter } from "../lib/rateLimit.js";
-import { nameKey, normalizeName } from "../lib/names.js";
+import { isReservedName, nameKey, normalizeName } from "../lib/names.js";
 import { cleanToken, hashToken } from "../lib/accounts.js";
 
 const router = Router();
@@ -23,6 +23,7 @@ router.post("/check", async (req, res) => {
 
   const name = normalizeName(req.body?.name);
   if (!name) return res.json({ status: "invalid" });
+  if (isReservedName(name)) return res.json({ status: "reserved", name });
 
   const owner = await User.findOne({ nameKey: nameKey(name) }, { name: 1, tokenHash: 1 }).lean();
   if (!owner) return res.json({ status: "free", name });

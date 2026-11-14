@@ -5,6 +5,7 @@ import { fetchMessages } from "../lib/api.js";
 import { getSavedView, getToken, rememberToken, saveView } from "../lib/identity.js";
 import { playSound } from "../lib/sounds.js";
 import { notifyMessage } from "../lib/notifications.js";
+import { mentionsEveryone, mentionsName } from "../lib/mentions.js";
 import { clearLegacyProfile, takeLegacyProfile } from "../lib/profile.js";
 import { ChatContext, ProfilesContext } from "./chat-context.js";
 import { TYPING_TTL_MS, chatReducer, createInitialState } from "./chatReducer.js";
@@ -12,6 +13,7 @@ import { TYPING_TTL_MS, chatReducer, createInitialState } from "./chatReducer.js
 const REJECTIONS = {
   NAME_TAKEN: "Esse nome já tem dono. Se for você, cole o seu código de acesso.",
   INVALID_NAME: "Nome inválido. Use de 2 a 32 caracteres.",
+  RESERVED_NAME: "Esse nome é reservado (é usado para mencionar todo mundo). Escolha outro.",
   UNKNOWN_CODE: "Código de acesso não encontrado. Confira se copiou ele inteiro.",
   INVALID_TOKEN: "Código de acesso inválido. Confira se copiou ele inteiro.",
   TOO_MANY_SIGNUPS: "Muitas contas criadas desta rede agora há pouco. Tente de novo mais tarde.",
@@ -92,15 +94,25 @@ export function ChatProvider({ login, onIdentity, onRejected, onLogout, children
       const { self, view, channels } = stateRef.current;
       const focused = document.hasFocus();
       const watching = view?.type === "text" && view.id === message.channelId && focused;
-      if (message.author !== self?.name && !watching) playSound("message");
-      // Notificação só com o Furicord em segundo plano; na frente, o som e o canal marcado bastam.
-      if (message.author !== self?.name && !focused) {
+      const fromOther = message.author !== self?.name;
+      const named = fromOther && mentionsName(message.content, self?.name);
+      const everyone = fromOther && mentionsEveryone(message.content);
+      const mentioned = named || everyone;
+      if (fromOther && !watching) playSound("message");
+      // Menção avisa sempre que você não está olhando o canal; o resto, só com o
+      // Furicord em segundo plano (na frente, o som e o canal marcado bastam).
+      if (mentioned ? !watching : fromOther && !focused) {
         const channel = channels.text.find((item) => item.id === message.channelId);
-        notifyMessage(message, channel?.name ?? "canal", () => {
-          const next = { type: "text", id: message.channelId };
-          saveView(next);
-          dispatch({ type: "view", view: next });
-        });
+        notifyMessage(
+          message,
+          channel?.name ?? "canal",
+          () => {
+            const next = { type: "text", id: message.channelId };
+            saveView(next);
+            dispatch({ type: "view", view: next });
+          },
+          { mention: mentioned, everyone: everyone && !named },
+        );
       }
       dispatch({ type: "message", message });
     });

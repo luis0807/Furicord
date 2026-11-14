@@ -1,9 +1,10 @@
-import { Fragment, memo, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Hash, ImageOff, LoaderCircle } from "lucide-react";
 import { useChat, useProfile } from "../state/chat-context.js";
 import { uploadUrl } from "../lib/config.js";
 import { formatDay, formatTime, formatTimestamp, isSameDay } from "../lib/format.js";
 import { cls } from "../lib/cls.js";
+import { EVERYONE, buildMentionMatcher, mentionsEveryone, mentionsName, splitMentions } from "../lib/mentions.js";
 import { useOverlays } from "./overlay-context.js";
 import { Avatar, UserName } from "./ui.jsx";
 
@@ -18,6 +19,10 @@ export default function MessageList({ channel, entry, onOpenImage, onLoadOlder, 
   const { state } = useChat();
   const selfName = state.self?.name;
   const items = entry?.items ?? EMPTY;
+  // A lista de membros chega de novo a cada mudança de presença; o matcher só muda
+  // (e as mensagens só re-renderizam) quando os nomes mudam.
+  const namesKey = state.users.map((user) => user.name).join("\n");
+  const mentionMatcher = useMemo(() => buildMentionMatcher(namesKey ? namesKey.split("\n") : []), [namesKey]);
   const scrollRef = useRef(null);
   const contentRef = useRef(null);
   // Medidas da última renderização, para decidir como rolar depois da próxima.
@@ -120,7 +125,13 @@ export default function MessageList({ channel, entry, onOpenImage, onLoadOlder, 
                   {formatDay(message.createdAt)}
                 </div>
               )}
-              <MessageItem message={message} grouped={grouped} selfName={selfName} onOpenImage={onOpenImage} />
+              <MessageItem
+                message={message}
+                grouped={grouped}
+                selfName={selfName}
+                mentionMatcher={mentionMatcher}
+                onOpenImage={onOpenImage}
+              />
             </Fragment>
           );
         })}
@@ -129,14 +140,33 @@ export default function MessageList({ channel, entry, onOpenImage, onLoadOlder, 
   );
 }
 
-const MessageItem = memo(function MessageItem({ message, grouped, selfName, onOpenImage }) {
+const MessageItem = memo(function MessageItem({ message, grouped, selfName, mentionMatcher, onOpenImage }) {
   const { openProfile } = useOverlays();
   // Membros aparecem com o perfil de agora; conta que sumiu, com o gravado na mensagem.
   const live = useProfile(message.author);
   const profile = live ?? message.authorProfile ?? null;
   const showProfile = (event) => openProfile(message.author, event, message.authorProfile ?? null);
   const mentioned =
-    selfName && message.author !== selfName && message.content.toLocaleLowerCase("pt-BR").includes(`@${selfName.toLocaleLowerCase("pt-BR")}`);
+    message.author !== selfName && (mentionsEveryone(message.content) || mentionsName(message.content, selfName));
+  const renderMentions = (text, offset) =>
+    splitMentions(text, mentionMatcher).map((part) =>
+      typeof part === "string" ? (
+        part
+      ) : part.mention === EVERYONE ? (
+        <span key={`m${offset + part.index}`} className="mention is-self">
+          @{EVERYONE}
+        </span>
+      ) : (
+        <button
+          key={`m${offset + part.index}`}
+          type="button"
+          className={cls("mention", part.mention === selfName && "is-self")}
+          onClick={(event) => openProfile(part.mention, event)}
+        >
+          @{part.mention}
+        </button>
+      ),
+    );
 
   return (
     <article className={cls("message", grouped && "is-grouped", mentioned && "is-mentioned")}>
@@ -169,7 +199,7 @@ const MessageItem = memo(function MessageItem({ message, grouped, selfName, onOp
             </time>
           </header>
         )}
-        {message.content && <div className="message-text">{linkify(message.content)}</div>}
+        {message.content && <div className="message-text">{linkify(message.content, renderMentions)}</div>}
         {message.attachments.length > 0 && (
           <div className="message-attachments">
             {message.attachments.map((attachment) => (
@@ -219,14 +249,15 @@ function fitInside(width, height, maxWidth, maxHeight) {
   return { width: Math.round(width * scale), height: Math.round(height * scale) };
 }
 
-// Transforma URLs em links clicáveis. Todo o resto vira texto puro (nada de HTML).
+// Transforma URLs em links clicáveis. O texto entre elas passa por `renderText`
+// (menções); nada vira HTML.
 const URL_PATTERN = /https?:\/\/[^\s<]+[^\s<.,:;"')\]!?]/g;
 
-function linkify(text) {
+function linkify(text, renderText) {
   const parts = [];
   let last = 0;
   for (const match of text.matchAll(URL_PATTERN)) {
-    if (match.index > last) parts.push(text.slice(last, match.index));
+    if (match.index > last) parts.push(...renderText(text.slice(last, match.index), last));
     parts.push(
       <a key={match.index} href={match[0]} target="_blank" rel="noopener noreferrer">
         {match[0]}
@@ -234,6 +265,6 @@ function linkify(text) {
     );
     last = match.index + match[0].length;
   }
-  if (last < text.length) parts.push(text.slice(last));
+  if (last < text.length) parts.push(...renderText(text.slice(last), last));
   return parts;
 }

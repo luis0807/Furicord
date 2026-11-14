@@ -6,7 +6,7 @@ import { Upload } from "./models/Upload.js";
 import { User, isDuplicateKey } from "./models/User.js";
 import { isObjectId } from "./lib/http.js";
 import { createRateLimiter } from "./lib/rateLimit.js";
-import { nameKey, normalizeName } from "./lib/names.js";
+import { isReservedName, nameKey, normalizeName } from "./lib/names.js";
 import { messageProfile, sanitizeProfile } from "./lib/profile.js";
 import { cleanToken, clientIp, hashToken } from "./lib/accounts.js";
 import { getIceConfig } from "./lib/ice.js";
@@ -30,7 +30,7 @@ const TURN_REPORT_MAX_BPS = 40_000_000;
  *   resume  = reconexão automática (nome salvo): não confere o nome, que pode ter
  *             mudado em outro aparelho
  *   profile = perfil antigo que estava só no navegador (migra para a conta nova)
- *   Erros: INVALID_TOKEN, UNKNOWN_CODE, INVALID_NAME, NAME_TAKEN, NAME_MISMATCH,
+ *   Erros: INVALID_TOKEN, UNKNOWN_CODE, INVALID_NAME, RESERVED_NAME, NAME_TAKEN, NAME_MISMATCH,
  *          TOO_MANY_SIGNUPS, SERVER_ERROR
  *
  * Eventos (cliente -> servidor)
@@ -169,6 +169,7 @@ export function attachSocket(httpServer) {
         if (auth.name == null) return next(new Error("UNKNOWN_CODE"));
         const name = normalizeName(auth.name);
         if (!name) return next(new Error("INVALID_NAME"));
+        if (isReservedName(name)) return next(new Error("RESERVED_NAME"));
         if (await User.exists({ nameKey: nameKey(name) })) return next(new Error("NAME_TAKEN"));
         if (!allowSignup(clientIp(socket))) return next(new Error("TOO_MANY_SIGNUPS"));
         try {
@@ -272,6 +273,7 @@ export function attachSocket(httpServer) {
       if (!owner) return respond({ error: "Sessão inválida. Recarregue a página." });
       const name = normalizeName(payload?.name);
       if (!name) return respond({ error: "Use de 2 a 32 caracteres." });
+      if (isReservedName(name)) return respond({ error: "Esse nome é reservado. Escolha outro." });
       if (!allowRename(socket.data.userId)) return respond({ error: "Calma! Espere um minuto para trocar de novo." });
 
       const oldKey = socket.data.key;

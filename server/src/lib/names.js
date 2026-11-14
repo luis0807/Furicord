@@ -14,3 +14,7 @@ export function normalizeName(raw) {
 }
 
 export const nameKey = (name) => name.toLocaleLowerCase("pt-BR");
+
+// "@everyone" menciona todo mundo (src/lib/mentions.js): ninguém pode se chamar assim.
+const RESERVED = new Set(["everyone"]);
+export const isReservedName = (name) => RESERVED.has(nameKey(name));

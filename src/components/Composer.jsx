@@ -1,10 +1,11 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import { CirclePlus, LoaderCircle, SendHorizontal, TriangleAlert, X } from "lucide-react";
+import { CirclePlus, LoaderCircle, SendHorizontal, TriangleAlert, Users, X } from "lucide-react";
 import { useChat } from "../state/chat-context.js";
 import { ALLOWED_IMAGE_TYPES, MAX_ATTACHMENTS, MAX_MESSAGE_LENGTH } from "../lib/config.js";
 import { listNames } from "../lib/format.js";
 import { cls } from "../lib/cls.js";
-import { IconButton } from "./ui.jsx";
+import { mentionQueryAt, suggestMembers } from "../lib/mentions.js";
+import { Avatar, IconButton, UserName } from "./ui.jsx";
 
 const TYPING_THROTTLE_MS = 2500;
 
@@ -16,13 +17,40 @@ export default function Composer({ channel, attachments }) {
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
   const lastTypingAt = useRef(0);
+  const [caret, setCaret] = useState(0);
+  const [mentionIndex, setMentionIndex] = useState(0);
+  // Onde estava o "@" da lista fechada (Esc ou nome escolhido): ela não reabre ali.
+  const [dismissedAt, setDismissedAt] = useState(null);
+  const pendingCaret = useRef(null);
 
   // Cresce com o texto até um limite (depois rola por dentro).
   useLayoutEffect(() => {
     const textarea = textareaRef.current;
     textarea.style.height = "auto";
     textarea.style.height = `${textarea.scrollHeight}px`;
+    if (pendingCaret.current !== null) {
+      textarea.setSelectionRange(pendingCaret.current, pendingCaret.current);
+      pendingCaret.current = null;
+    }
   }, [text]);
+
+  const mention = mentionQueryAt(text, caret);
+  const suggestions =
+    mention && mention.start !== dismissedAt ? suggestMembers(state.users, mention.query, state.self?.name) : [];
+  const activeMention = Math.min(mentionIndex, suggestions.length - 1);
+
+  function insertMention(name) {
+    const before = text.slice(0, mention.start);
+    const after = text.slice(caret);
+    const inserted = `@${name} `;
+    const position = before.length + inserted.length;
+    pendingCaret.current = position;
+    setText(before + inserted + (after.startsWith(" ") ? after.slice(1) : after));
+    setCaret(position);
+    setDismissedAt(mention.start);
+    setMentionIndex(0);
+    textareaRef.current?.focus();
+  }
 
   const tooLong = text.length > MAX_MESSAGE_LENGTH;
   const hasContent = text.trim().length > 0 || attachments.readyIds.length > 0;
@@ -39,12 +67,32 @@ export default function Composer({ channel, attachments }) {
       return;
     }
     setText("");
+    setDismissedAt(null);
     attachments.clear();
     attachments.dismissNotice();
     textareaRef.current?.focus();
   }
 
   function handleKeyDown(event) {
+    if (suggestions.length > 0 && !event.nativeEvent.isComposing) {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        const step = event.key === "ArrowDown" ? 1 : -1;
+        setMentionIndex((activeMention + step + suggestions.length) % suggestions.length);
+        return;
+      }
+      if ((event.key === "Enter" && !event.shiftKey) || event.key === "Tab") {
+        event.preventDefault();
+        insertMention(suggestions[activeMention].name);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        setDismissedAt(mention.start);
+        return;
+      }
+    }
     // Enter envia, Shift+Enter quebra linha. isComposing: não envia no meio de um acento/IME.
     if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
@@ -54,6 +102,9 @@ export default function Composer({ channel, attachments }) {
 
   function handleChange(event) {
     setText(event.target.value);
+    setCaret(event.target.selectionStart);
+    setMentionIndex(0);
+    if (mentionQueryAt(event.target.value, event.target.selectionStart)?.start !== dismissedAt) setDismissedAt(null);
     const now = Date.now();
     if (event.target.value && now - lastTypingAt.current > TYPING_THROTTLE_MS) {
       lastTypingAt.current = now;
@@ -90,6 +141,37 @@ export default function Composer({ channel, attachments }) {
       )}
 
       <div className="composer">
+        {suggestions.length > 0 && (
+          <ul className="mention-popup" role="listbox" aria-label="Mencionar alguém">
+            {suggestions.map((user, index) => (
+              <li key={user.name} role="option" aria-selected={index === activeMention}>
+                <button
+                  type="button"
+                  className={cls("mention-option", index === activeMention && "is-active")}
+                  onMouseDown={(event) => event.preventDefault()} // não tira o foco do campo
+                  onMouseEnter={() => setMentionIndex(index)}
+                  onClick={() => insertMention(user.name)}
+                >
+                  {user.everyone ? (
+                    <>
+                      <span className="mention-everyone-icon" aria-hidden="true">
+                        <Users size={14} />
+                      </span>
+                      <span>@everyone</span>
+                      <span className="mention-option-hint">Notifica todo mundo</span>
+                    </>
+                  ) : (
+                    <>
+                      <Avatar name={user.name} profile={user.profile ?? null} size={24} online={user.online} />
+                      <UserName name={user.name} profile={user.profile ?? null} />
+                    </>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
         {attachments.items.length > 0 && (
           <div className="composer-attachments">
             {attachments.items.map((item) => (
@@ -141,6 +223,7 @@ export default function Composer({ channel, attachments }) {
             placeholder={`Conversar em #${channel.name}`}
             aria-label={`Mensagem para #${channel.name}`}
             onChange={handleChange}
+            onSelect={(event) => setCaret(event.target.selectionStart)}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
           />

@@ -20,11 +20,18 @@ import { THEMES, applyTheme, loadTheme, resolveTheme, saveTheme } from "../lib/t
 import { STREAM_FPS, STREAM_RESOLUTIONS } from "../lib/streamQuality.js";
 import { getSoundsEnabled, playSound, setSoundsEnabled, subscribeSounds } from "../lib/sounds.js";
 import {
+  getNotificationMode,
   getNotificationsEnabled,
   notificationsSupported,
+  setNotificationMode,
   setNotificationsEnabled,
   subscribeNotifications,
 } from "../lib/notifications.js";
+
+const NOTIFICATION_MODES = [
+  { id: "all", label: "Todas as mensagens" },
+  { id: "mentions", label: "Só quando me mencionarem" },
+];
 import { getStartWithSystem, isDesktop, isWindows, setStartWithSystem } from "../lib/desktop.js";
 import DownloadAppButton from "./DownloadAppButton.jsx";
 import { IconButton } from "./ui.jsx";
@@ -126,6 +133,7 @@ export default function SettingsModal({ initialTab = "perfil", onClose }) {
 
 function GeneralTab() {
   const notificationsOn = useSyncExternalStore(subscribeNotifications, getNotificationsEnabled);
+  const notificationMode = useSyncExternalStore(subscribeNotifications, getNotificationMode);
   const [notificationsError, setNotificationsError] = useState(null);
 
   async function toggleNotifications(value) {
@@ -153,9 +161,25 @@ function GeneralTab() {
           />
           Habilitar notificações
         </label>
+        {notificationsOn && (
+          <div className="chip-row notification-mode" role="radiogroup" aria-label="Quando notificar">
+            {NOTIFICATION_MODES.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                role="radio"
+                aria-checked={notificationMode === item.id}
+                className={cls("chip", notificationMode === item.id && "is-selected")}
+                onClick={() => setNotificationMode(item.id)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        )}
         <p className="settings-hint">
           {notificationsSupported
-            ? "Avisa das mensagens novas quando o Furicord não está em primeiro plano."
+            ? "Quando alguém te marca com @, você é avisado sempre que não estiver olhando aquele canal. As outras mensagens avisam só com o Furicord em segundo plano."
             : "Este navegador não mostra notificações."}
         </p>
         {notificationsError && (

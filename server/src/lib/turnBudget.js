@@ -192,7 +192,7 @@ async function flush() {
   try {
     const doc = await TurnUsage.findOneAndUpdate({ _id: month }, toUpdate(batch), {
       upsert: true,
-      new: true,
+      returnDocument: "after",
       lean: true,
     });
     reported = doc.bytes;

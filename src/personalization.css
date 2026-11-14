@@ -62,6 +62,23 @@
 .notification-mode {
   margin-top: 10px;
 }
+
+.about-list {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  margin: 10px 0 0;
+  font-size: 14px;
+}
+
+.about-list dt {
+  color: var(--text-muted);
+}
+
+.about-list dd {
+  margin: 0;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+}
 .button-secondary.is-busy {
   opacity: 0.7;
   cursor: progress;

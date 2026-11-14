@@ -7,9 +7,12 @@
     "urls": ["https://furicord.vercel.app/*"]
   },
   "permissions": [
+    "core:app:allow-version",
     "autostart:allow-is-enabled",
     "autostart:allow-enable",
     "autostart:allow-disable",
-    "notification:default"
+    "notification:default",
+    "updater:default",
+    "process:allow-restart"
   ]
 }

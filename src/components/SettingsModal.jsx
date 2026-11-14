@@ -34,6 +34,7 @@ const NOTIFICATION_MODES = [
 ];
 import { getStartWithSystem, isDesktop, isWindows, setStartWithSystem } from "../lib/desktop.js";
 import DownloadAppButton from "./DownloadAppButton.jsx";
+import { SITE_COMMIT, getAppVersion } from "../lib/version.js";
 import { IconButton } from "./ui.jsx";
 import ProfileEditor from "./ProfileEditor.jsx";
 import TurnStatsPanel from "./TurnStatsPanel.jsx";
@@ -190,7 +191,40 @@ function GeneralTab() {
       </section>
 
       {isDesktop ? <StartWithSystemSection /> : <DesktopAppSection />}
+      <AboutSection />
     </div>
+  );
+}
+
+function AboutSection() {
+  // undefined = lendo; null = não deu para ler (app antigo, sem essa permissão)
+  const [appVersion, setAppVersion] = useState(undefined);
+
+  useEffect(() => {
+    if (!isDesktop) return;
+    let alive = true;
+    getAppVersion()
+      .then((version) => alive && setAppVersion(version))
+      .catch(() => alive && setAppVersion(null));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  return (
+    <section>
+      <h3 className="field-label">Sobre</h3>
+      <dl className="about-list">
+        {isDesktop && (
+          <>
+            <dt>App de desktop</dt>
+            <dd>{appVersion === undefined ? "…" : appVersion ? `v${appVersion}` : "versão antiga"}</dd>
+          </>
+        )}
+        <dt>Site</dt>
+        <dd title="Commit publicado no Vercel">{SITE_COMMIT}</dd>
+      </dl>
+    </section>
   );
 }
 

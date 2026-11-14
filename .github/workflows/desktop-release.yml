@@ -1,0 +1,75 @@
+# Compila o app de desktop (Tauri) no Windows, assina a atualização e publica um
+# release no GitHub. O app instalado encontra o release pelo latest.json e oferece
+# a atualização. Só roda quando muda a parte nativa (src-tauri): mudanças no front
+# chegam ao app pelo deploy do Vercel, sem instalador novo.
+name: App de desktop
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "src-tauri/**"
+      - ".github/workflows/desktop-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-release
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+
+      - run: npm ci
+
+      # Cada execução vira uma versão nova (0.1.<número da execução>): é a versão
+      # maior que faz o app instalado perceber que há atualização.
+      - name: Define a versão
+        shell: bash
+        run: |
+          node -e "
+            const fs = require('fs');
+            const file = 'src-tauri/tauri.conf.json';
+            const config = JSON.parse(fs.readFileSync(file, 'utf8'));
+            config.version = '0.1.' + process.env.GITHUB_RUN_NUMBER;
+            fs.writeFileSync(file, JSON.stringify(config, null, 2));
+            console.log('versão', config.version);
+          "
+
+      - uses: tauri-apps/tauri-action@v0
+        id: tauri
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        with:
+          tagName: v__VERSION__
+          releaseName: Furicord __VERSION__
+          releaseBody: "Atualização do app de desktop. Quem já tem o Furicord instalado recebe o aviso para atualizar dentro do app."
+          releaseDraft: false
+          prerelease: false
+
+      # O botão "Baixar app" do site aponta para um nome fixo: anexa uma cópia com ele.
+      - name: Anexa Furicord-setup.exe
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp src-tauri/target/release/bundle/nsis/*-setup.exe Furicord-setup.exe
+          gh release upload "v${{ steps.tauri.outputs.appVersion }}" Furicord-setup.exe --clobber

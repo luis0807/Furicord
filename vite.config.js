@@ -6,6 +6,10 @@ import react from "@vitejs/plugin-react";
 // VITE_SERVER_URL fica vazio no desenvolvimento.
 export default defineConfig({
   plugins: [react()],
+  // Commit do deploy (o Vercel informa no build); "local" fora dele.
+  define: {
+    __SITE_COMMIT__: JSON.stringify((process.env.VERCEL_GIT_COMMIT_SHA ?? "").slice(0, 7) || "local"),
+  },
   server: {
     proxy: {
       "/api": { target: "http://localhost:4000", changeOrigin: true },

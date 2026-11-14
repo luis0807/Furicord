@@ -26,11 +26,21 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM4QjMzQzlDMTg0RDVDQkYKUldTL1hFMFluRHl6T0pyQWdGWFA3YVVKRXowc1BrSDFUMnpwNW9TNm0zSml4K0hYNlRuOXhEY1kK",
+      "endpoints": ["https://github.com/luis0807/Furicord/releases/latest/download/latest.json"],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

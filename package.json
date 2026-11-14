@@ -11,7 +11,10 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.12.4",
     "@tauri-apps/plugin-autostart": "^2.7.0",
+    "@tauri-apps/plugin-process": "^2.4.0",
+    "@tauri-apps/plugin-updater": "^2.14.1",
     "@vercel/analytics": "^2.0.1",
     "lucide-react": "^1.70.0",
     "react": "^19.3.1",

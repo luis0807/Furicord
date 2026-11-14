@@ -822,6 +822,62 @@ textarea {
   background: var(--accent-button-hover);
 }
 
+/* "Atualizar app" usa o mesmo visual, mas é um <button>. */
+button.download-app {
+  border: 0;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+button.download-app:disabled {
+  opacity: 0.8;
+  cursor: progress;
+}
+
+.update-toast {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 80;
+  width: min(340px, calc(100vw - 32px));
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 12px;
+  background: var(--bg-solid);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+  font-size: 14px;
+}
+
+.update-toast-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--accent);
+}
+
+.update-toast-header strong {
+  color: var(--text);
+}
+
+.update-toast-close {
+  margin-left: auto;
+  padding: 2px;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.update-toast p {
+  margin: 8px 0 12px;
+  color: var(--text-muted);
+}
+
+.update-toast .button-primary {
+  width: auto;
+  padding: 9px 14px;
+}
+
 .channel-header .download-app {
   margin-right: 6px;
 }

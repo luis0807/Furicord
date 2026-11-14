@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { useChat } from "../state/chat-context.js";
 import { cls } from "../lib/cls.js";
+import { GB, buildDailySeries, formatMonth, formatMonthTitle, formatSize, monthInfo, percent, percentLabel, projectMonthUsage } from "../lib/turnStats.js";
 
 /*
  * Painel "Servidor de voz": quanto da franquia mensal do TURN da Cloudflare já foi
@@ -13,27 +14,8 @@ import { cls } from "../lib/cls.js";
  */
 
 const REFRESH_MS = 60_000;
-const GB = 1024 ** 3;
-const MB = 1024 ** 2;
 
-const number = (value, digits) =>
-  value.toLocaleString("pt-BR", { minimumFractionDigits: digits, maximumFractionDigits: digits });
-
-// 0 B, 840 MB, 1,24 GB, 312 GB
-function formatSize(bytes) {
-  if (!bytes) return "0 MB";
-  if (bytes < GB) return `${number(Math.max(bytes / MB, 0.1), bytes < 10 * MB ? 1 : 0)} MB`;
-  return `${number(bytes / GB, bytes < 100 * GB ? 2 : 0)} GB`;
-}
-
-const percent = (part, total) => (total > 0 ? Math.round((part / total) * 100) : 0);
-// "12%", ou "<1%" quando há consumo mas ainda não chega a 1%.
-const percentLabel = (part, total) => (part > 0 && percent(part, total) === 0 ? "<1%" : `${percent(part, total)}%`);
 const clock = new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" });
-const monthName = new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" });
-const formatMonth = (key) => monthName.format(new Date(`${key}-01T12:00:00Z`));
-// "Outubro de 2026" (só a primeira letra maiúscula).
-const formatMonthTitle = (key) => formatMonth(key).replace(/^./, (letter) => letter.toUpperCase());
 
 const PATH_LABELS = {
   local: { label: "Mesma rede", hint: "mesma casa ou mesmo Wi-Fi" },
@@ -110,13 +92,7 @@ export default function TurnStatsPanel() {
 
 function Overview({ stats }) {
   const { usedBytes, limitBytes, alertsGB, blocked, month } = stats;
-  const now = new Date();
-  const [year, monthNumber] = month.split("-").map(Number);
-  const daysInMonth = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
-  const today = now.getUTCDate();
-  // Ritmo até agora (dias completos + fração de hoje), projetado até o fim do mês.
-  const elapsedDays = Math.max(today - 1 + (now.getUTCHours() * 60 + now.getUTCMinutes()) / 1440, 0.25);
-  const projection = (usedBytes / elapsedDays) * daysInMonth;
+  const projection = projectMonthUsage(usedBytes, month, new Date());
   const usedShare = Math.min(usedBytes / limitBytes, 1);
   const overProjection = projection >= limitBytes;
 
@@ -223,16 +199,9 @@ function DailyChart({ stats }) {
   const [hover, setHover] = useState(null);
   const { month, app, cloudflare } = stats;
   const official = cloudflare.configured && cloudflare.days ? cloudflare.days : null;
-  const [year, monthNumber] = month.split("-").map(Number);
-  const daysInMonth = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
-  const today = new Date().toISOString().slice(0, 10);
+  const { monthNumber, daysInMonth } = monthInfo(month);
 
-  const days = Array.from({ length: daysInMonth }, (_, index) => {
-    const key = `${month}-${String(index + 1).padStart(2, "0")}`;
-    const appBytes = app.days[key] ?? 0;
-    const cfBytes = official?.[key] ?? 0;
-    return { day: index + 1, key, appBytes, cfBytes, bytes: Math.max(appBytes, cfBytes), future: key > today };
-  });
+  const days = buildDailySeries(month, app.days, official, new Date());
   const max = Math.max(...days.map((item) => item.bytes), 0);
   const total = days.reduce((sum, item) => sum + item.bytes, 0);
   const active = hover !== null ? days[hover] : null;

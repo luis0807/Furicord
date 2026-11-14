@@ -14,7 +14,7 @@
   --text-faint: #72727e;
 
   /* O tema (src/lib/theme.js) troca só --accent; o resto deriva dele. */
-  --accent: #ff6a3d;
+  --accent: #e6360b;
   --accent-button: color-mix(in srgb, var(--accent) 80%, #000);
   --accent-button-hover: color-mix(in srgb, var(--accent) 90%, #000);
   --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
@@ -107,8 +107,15 @@ textarea {
 .brand-logo {
   display: block;
   flex-shrink: 0;
-  max-width: 100%;
-  height: auto;
+  background: url("/logo.svg") center / contain no-repeat;
+}
+
+/* Cor de destaque fora do padrão (theme.js): a logo é pintada com ela, usando o
+   desenho como máscara. */
+:root[data-logo-tint] .brand-logo {
+  background: linear-gradient(45deg, color-mix(in srgb, var(--accent) 78%, #000), var(--accent));
+  -webkit-mask: url("/logo-mono.svg") center / contain no-repeat;
+  mask: url("/logo-mono.svg") center / contain no-repeat;
 }
 
 .avatar {

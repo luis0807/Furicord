@@ -4,7 +4,8 @@
 const STORAGE_KEY = "furicord.theme";
 
 export const THEMES = [
-  { id: "padrao", label: "Padrão", accent: "#ff6a3d", gradient: null },
+  // Vermelho da logo (public/logo.svg).
+  { id: "padrao", label: "Padrão", accent: "#e6360b", gradient: null },
   { id: "meia-noite", label: "Meia-noite", accent: "#5b8cff", gradient: ["#0b1026", "#1d1247"] },
   { id: "floresta", label: "Floresta", accent: "#3ccf72", gradient: ["#06170e", "#143a26"] },
   { id: "oceano", label: "Oceano", accent: "#22c3e6", gradient: ["#03182a", "#0a3d4c"] },
@@ -14,7 +15,7 @@ export const THEMES = [
   { id: "neon", label: "Neon", accent: "#ff4fd8", gradient: ["#140328", "#03282f"] },
 ];
 
-const DEFAULT_THEME = { id: "padrao" };
+export const DEFAULT_THEME = { id: "padrao" };
 const HEX = /^#[0-9a-f]{6}$/i;
 
 // { id } de um tema pronto, ou { id: "custom", accent, gradient: [a, b] | null }.
@@ -55,6 +56,9 @@ export function applyTheme(saved) {
     root.style.removeProperty("--app-grad-1");
     root.style.removeProperty("--app-grad-2");
   }
+  // Tema padrão: a logo original. Outra cor de destaque: a logo é pintada com ela.
+  if (theme.id === DEFAULT_THEME.id) delete root.dataset.logoTint;
+  else root.dataset.logoTint = "";
   // Cor da barra do navegador no celular.
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme.gradient?.[0] ?? "#16161a");
 }

@@ -16,7 +16,7 @@ import { useChat } from "../state/chat-context.js";
 import { useVoice } from "../voice/voice-context.js";
 import { cls } from "../lib/cls.js";
 import { getToken, normalizeName } from "../lib/identity.js";
-import { THEMES, applyTheme, loadTheme, resolveTheme, saveTheme } from "../lib/theme.js";
+import { DEFAULT_THEME, THEMES, applyTheme, loadTheme, resolveTheme, saveTheme } from "../lib/theme.js";
 import { STREAM_FPS, STREAM_RESOLUTIONS } from "../lib/streamQuality.js";
 import { getSoundsEnabled, playSound, setSoundsEnabled, subscribeSounds } from "../lib/sounds.js";
 import {
@@ -389,7 +389,6 @@ function AppearanceTab() {
   const [saved, setSaved] = useState(loadTheme);
   const theme = resolveTheme(saved);
   const soundsOn = useSyncExternalStore(subscribeSounds, getSoundsEnabled);
-
   function choose(next) {
     setSaved(next);
     saveTheme(next);
@@ -440,6 +439,14 @@ function AppearanceTab() {
             />
             Cor de destaque
           </label>
+          <button
+            type="button"
+            className="button-ghost"
+            disabled={saved.id === DEFAULT_THEME.id}
+            onClick={() => choose(DEFAULT_THEME)}
+          >
+            Redefinir para o padrão
+          </button>
           <label className="switch-field">
             <input
               type="checkbox"

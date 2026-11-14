@@ -58,11 +58,17 @@ export function IconButton({ label, onClick, active, danger, disabled, className
   );
 }
 
-// Proporção do viewBox de public/logo.svg.
+// Proporção do viewBox de public/logo.svg (e da logo-mono.svg, usada ao pintar
+// a logo com a cor de destaque — ver .brand-logo no index.css).
 const LOGO_RATIO = 332.03 / 61.62;
 
 export function Logo({ height = 24 }) {
   return (
-    <img className="brand-logo" src="/logo.svg" alt="Furicord" height={height} width={Math.round(height * LOGO_RATIO)} />
+    <span
+      className="brand-logo"
+      role="img"
+      aria-label="Furicord"
+      style={{ width: Math.round(height * LOGO_RATIO), height }}
+    />
   );
 }

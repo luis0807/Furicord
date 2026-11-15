@@ -19,3 +19,4 @@ npm-debug.log*
 !.vscode/extensions.json
 .idea
 .DS_Store
+TAURI_PRIVATE_KEY.txt

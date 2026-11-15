@@ -19,6 +19,10 @@ import {
  * Começar/parar de transmitir é só `replaceTrack` (sem renegociar), e quem recebe
  * sabe o que é cada trilha pela posição, sem precisar de metadados extras.
  *
+ * Assistir é opcional: a tela só vai para quem pediu ("screenWatch" pela mesma via
+ * da negociação). Para os outros, as trilhas de tela ficam vazias e nada é enviado —
+ * nem gasta a franquia do TURN.
+ *
  * Quem entra na sala é sempre quem faz a oferta para quem já estava. Como só um lado
  * oferece, não existe "colisão" de ofertas para tratar.
  *
@@ -76,6 +80,8 @@ export class VoiceEngine {
   micPromise = null;
   micError = null;
   screenStream = null;
+  screenWarning = null; // aviso para quem transmite (ex: áudio da chamada vazando)
+  watching = new Set(); // ids das pessoas cuja tela estamos assistindo
   streamQuality = loadStreamQuality();
   error = null;
 
@@ -132,6 +138,8 @@ export class VoiceEngine {
         micStream: peer.micStream,
         screenStream: peer.screenStream,
         screenAudioStream: peer.screenAudioStream,
+        // Estamos assistindo a tela dessa pessoa.
+        watching: this.watching.has(peer.id),
       };
     }
     return {
@@ -146,6 +154,9 @@ export class VoiceEngine {
       hasMic: Boolean(this.micStream),
       micError: this.micError,
       screenStream: this.screenStream,
+      screenWarning: this.screenWarning,
+      // Quantas pessoas estão assistindo a nossa tela.
+      screenViewers: [...this.peers.values()].filter((peer) => peer.wantsScreen).length,
       streamQuality: this.streamQuality,
       error: this.error,
       turnLimited: this.turnLimited,
@@ -236,6 +247,7 @@ export class VoiceEngine {
     this.rejoinChannelId = null;
     for (const id of [...this.peers.keys()]) this.closePeer(id, { silent: true });
     this.waitingSince.clear();
+    this.watching.clear();
     this.channelId = null;
     this.sid = null;
     this.stopScreenShare({ silent: true });
@@ -252,6 +264,7 @@ export class VoiceEngine {
     this.pendingChannelId = null;
     for (const id of [...this.peers.keys()]) this.closePeer(id, { silent: true });
     this.waitingSince.clear();
+    this.watching.clear();
     this.channelId = null;
     this.sid = null;
     this.rejoinChannelId = channelId;
@@ -269,15 +282,22 @@ export class VoiceEngine {
   syncState(entries) {
     if (!this.channelId) return;
     const present = new Map();
+    const sharing = new Set();
     for (const entry of entries) {
-      if (entry.channelId === this.channelId && entry.id !== this.socket.id) present.set(entry.id, entry.sid);
+      if (entry.channelId !== this.channelId || entry.id === this.socket.id) continue;
+      present.set(entry.id, entry.sid);
+      if (entry.sharing) sharing.add(entry.id);
     }
     for (const [id, peer] of this.peers) {
       if (present.get(id) !== peer.remoteSid) this.closePeer(id);
     }
+    let changed = false;
+    // A transmissão acabou: a próxima, se vier, é para escolher assistir de novo.
+    for (const id of this.watching) {
+      if (!sharing.has(id)) changed = this.watching.delete(id);
+    }
     // Quem chegou depois manda a oferta; enquanto ela não vem, não há conexão para
     // acompanhar. Anota desde quando, para a tela também não esperar para sempre.
-    let changed = false;
     for (const id of this.waitingSince.keys()) {
       if (!present.has(id) || this.peers.has(id)) changed = this.waitingSince.delete(id);
     }
@@ -435,6 +455,9 @@ export class VoiceEngine {
 
     this.screenStream = stream;
     this.error = null;
+    this.screenWarning = ownAudioLeaks(stream)
+      ? "O áudio do computador está indo junto, e este navegador não conseguiu tirar dele as vozes da chamada: quem está na sala vai se ouvir na sua transmissão."
+      : null;
     const videoTrack = this.screenVideoTrack();
     if (videoTrack) videoTrack.contentHint = contentHintFor(this.streamQuality);
     // O botão "Parar de compartilhar" do próprio navegador encerra a trilha.
@@ -450,18 +473,45 @@ export class VoiceEngine {
     if (!this.screenStream) return;
     this.screenStream.getTracks().forEach((track) => track.stop());
     this.screenStream = null;
-    for (const peer of this.peers.values()) this.applyScreenTracks(peer);
+    this.screenWarning = null;
+    // Quem assistia esta transmissão escolhe de novo na próxima.
+    for (const peer of this.peers.values()) {
+      peer.wantsScreen = false;
+      this.applyScreenTracks(peer);
+    }
     if (!silent) {
       this.publishState();
       this.changed();
     }
   }
 
+  // Transmite sem o áudio do sistema (quando ele traria as vozes da chamada junto).
+  dropScreenAudio() {
+    const track = this.screenAudioTrack();
+    if (!track) return;
+    track.stop();
+    this.screenStream.removeTrack(track);
+    this.screenWarning = null;
+    for (const peer of this.peers.values()) this.applyScreenTracks(peer);
+    this.changed();
+  }
+
+  // A tela só vai para quem pediu para assistir.
   applyScreenTracks(peer) {
     if (!peer.tr) return;
-    peer.tr.video.sender.replaceTrack(this.screenVideoTrack()).catch(warn);
-    peer.tr.screenAudio.sender.replaceTrack(this.screenAudioTrack()).catch(warn);
+    const send = peer.wantsScreen;
+    peer.tr.video.sender.replaceTrack(send ? this.screenVideoTrack() : null).catch(warn);
+    peer.tr.screenAudio.sender.replaceTrack(send ? this.screenAudioTrack() : null).catch(warn);
     this.applyVideoEncoding(peer);
+  }
+
+  // Assistir (ou parar de assistir) a tela de alguém da sala.
+  watchScreen(id, watch) {
+    if (watch) this.watching.add(id);
+    else this.watching.delete(id);
+    const peer = this.peers.get(id);
+    if (peer?.tr) this.signal(peer, { screenWatch: watch });
+    this.changed();
   }
 
   // Sem isso o navegador limita a tela em ~2,5 Mbps, pouco para 1080p/60.
@@ -645,6 +695,7 @@ export class VoiceEngine {
       gaveUp: false,
       relayed: false,
       blocked: false,
+      wantsScreen: false, // essa pessoa pediu para assistir a nossa tela
       statsPairId: null,
       statsBytes: 0,
       statsScreen: 0, // bytes de tela recebidos (todas as trilhas de tela, acumulado)
@@ -669,6 +720,8 @@ export class VoiceEngine {
       if (state === "connected") {
         peer.restarts = 0;
         this.stopWatching(peer);
+        // Pedido de assistir feito antes de a conexão existir (ou religada): repete.
+        if (this.watching.has(peer.id)) this.signal(peer, { screenWatch: true });
       } else if (state === "failed") {
         this.connectionStuck(peer);
       } else if (state === "disconnected" && !peer.giveUpTimer) {
@@ -737,11 +790,8 @@ export class VoiceEngine {
     peer.screenStream = new MediaStream([video.receiver.track]);
     peer.screenAudioStream = new MediaStream([screenAudio.receiver.track]);
     this.watchSpeaking(peer.id, peer.micStream);
-    return Promise.all([
-      mic.sender.replaceTrack(this.micTrack()),
-      video.sender.replaceTrack(this.screenVideoTrack()),
-      screenAudio.sender.replaceTrack(this.screenAudioTrack()),
-    ]);
+    // Tela: só depois que a pessoa pedir (ver applyScreenTracks).
+    return mic.sender.replaceTrack(this.micTrack());
   }
 
   signal(peer, payload) {
@@ -774,7 +824,11 @@ export class VoiceEngine {
     const { pc } = peer;
     if (peer.closed || peer.blocked) return;
 
-    if (data.description) {
+    if (typeof data.screenWatch === "boolean") {
+      peer.wantsScreen = data.screenWatch;
+      this.applyScreenTracks(peer);
+      this.changed();
+    } else if (data.description) {
       await pc.setRemoteDescription(data.description);
       if (data.description.type === "offer") {
         if (!peer.tr) {
@@ -868,6 +922,17 @@ export class VoiceEngine {
     }
     if (changed) this.changed();
   }
+}
+
+// Tela inteira com áudio do sistema: o Windows entrega tudo o que toca no PC, inclusive
+// as vozes da chamada. Só não vaza se o navegador confirmar que excluiu o próprio áudio
+// (restrictOwnAudio). Aba ou janela não pegam o áudio da chamada.
+function ownAudioLeaks(stream) {
+  const audio = stream.getAudioTracks()[0];
+  if (!audio) return false;
+  const surface = stream.getVideoTracks()[0]?.getSettings().displaySurface;
+  if (surface && surface !== "monitor") return false;
+  return audio.getSettings().restrictOwnAudio !== true;
 }
 
 function describeMicError(err) {

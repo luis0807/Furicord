@@ -1591,6 +1591,12 @@ button.download-app:disabled {
   flex-shrink: 0;
 }
 
+.voice-alert-action {
+  flex-shrink: 0;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
 .voice-grid {
   flex: 1;
   min-height: 0;
@@ -1632,6 +1638,25 @@ button.download-app:disabled {
 .tile-placeholder {
   color: var(--text-muted);
   font-size: 14px;
+}
+
+.screen-invite {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-width: 280px;
+  padding: 0 16px;
+  text-align: center;
+}
+
+.screen-watch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: auto;
+  padding: 10px 18px;
 }
 
 .tile-label {

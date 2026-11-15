@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  Eye,
+  EyeOff,
   Fullscreen,
   HeadphoneOff,
   Headphones,
@@ -85,11 +87,15 @@ function VoiceStage({ participants }) {
   for (const participant of participants) {
     const isSelf = participant.id === voice.selfId;
     if (participant.sharing) {
+      const peer = voice.peers[participant.id];
       screens.push({
         key: `${participant.id}:tela`,
         participant,
         isSelf,
-        stream: isSelf ? voice.screenStream : voice.peers[participant.id]?.screenStream,
+        // A sua tela você sempre vê; a dos outros, só depois de escolher assistir.
+        watching: isSelf || Boolean(peer?.watching),
+        canWatch: isSelf || peer?.connectionState === "connected",
+        stream: isSelf ? voice.screenStream : peer?.screenStream,
       });
     }
     people.push({ key: participant.id, participant, isSelf });
@@ -124,6 +130,15 @@ function VoiceStage({ participants }) {
       {alert && (
         <div className="voice-alert" role="status">
           <TriangleAlert size={16} /> {alert}
+        </div>
+      )}
+      {voice.screenWarning && (
+        <div className="voice-alert" role="status">
+          <TriangleAlert size={16} />
+          <span>{voice.screenWarning}</span>
+          <button type="button" className="button-secondary voice-alert-action" onClick={voice.dropScreenAudio}>
+            Transmitir sem áudio
+          </button>
         </div>
       )}
 
@@ -186,27 +201,60 @@ function PersonTile({ participant, isSelf, speaking, connectionState }) {
 }
 
 function ScreenTile({ tile, focused, onToggleFocus }) {
+  const voice = useVoice();
   const ref = useRef(null);
   const toggleFullscreen = () => {
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     else ref.current?.requestFullscreen?.().catch(() => {});
   };
+  const viewers = voice.screenViewers;
 
   return (
-    <div className={cls("tile", "screen-tile", focused && "is-focused")} ref={ref} onDoubleClick={toggleFullscreen}>
-      {tile.stream ? <StreamVideo stream={tile.stream} /> : <div className="tile-placeholder">Carregando transmissão…</div>}
+    <div
+      className={cls("tile", "screen-tile", focused && "is-focused")}
+      ref={ref}
+      onDoubleClick={tile.watching ? toggleFullscreen : undefined}
+    >
+      {!tile.watching ? (
+        <div className="tile-placeholder screen-invite">
+          <button
+            type="button"
+            className="button-primary screen-watch"
+            onClick={() => voice.watchScreen(tile.participant.id, true)}
+            disabled={!tile.canWatch}
+          >
+            <Eye size={18} /> Assistir transmissão
+          </button>
+          <span>{tile.canWatch ? "A tela só é enviada para você enquanto estiver assistindo." : "Conectando…"}</span>
+        </div>
+      ) : tile.stream ? (
+        <StreamVideo stream={tile.stream} />
+      ) : (
+        <div className="tile-placeholder">Carregando transmissão…</div>
+      )}
       <span className="live-badge">AO VIVO</span>
       <div className="tile-label">
         <ScreenShare size={14} />
-        <span>{tile.isSelf ? "Sua tela" : `Tela de ${tile.participant.name}`}</span>
+        <span>
+          {tile.isSelf
+            ? `Sua tela · ${viewers === 0 ? "ninguém assistindo" : viewers === 1 ? "1 assistindo" : `${viewers} assistindo`}`
+            : `Tela de ${tile.participant.name}`}
+        </span>
       </div>
       <div className="tile-actions">
+        {!tile.isSelf && tile.watching && (
+          <IconButton label="Parar de assistir" onClick={() => voice.watchScreen(tile.participant.id, false)}>
+            <EyeOff />
+          </IconButton>
+        )}
         <IconButton label={focused ? "Voltar para a grade" : "Destacar"} onClick={onToggleFocus}>
           {focused ? <Minimize2 /> : <Maximize2 />}
         </IconButton>
-        <IconButton label="Tela cheia" onClick={toggleFullscreen}>
-          <Fullscreen />
-        </IconButton>
+        {tile.watching && (
+          <IconButton label="Tela cheia" onClick={toggleFullscreen}>
+            <Fullscreen />
+          </IconButton>
+        )}
       </div>
     </div>
   );

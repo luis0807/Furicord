@@ -10,6 +10,7 @@ import {
   videoConstraints,
 } from "../lib/streamQuality.js";
 import { nativeSystemAudioSupported, startSystemAudio } from "./systemAudio.js";
+import { getAudioSettings, updateAudioSettings } from "./audioSettings.js";
 
 /*
  * Voz e transmissão de tela via WebRTC em malha (cada participante conecta direto
@@ -80,6 +81,7 @@ export class VoiceEngine {
   micStream = null;
   micPromise = null;
   micError = null;
+  micGain = null; // volume de entrada fora dos 100%: o microfone passa por um ganho
   screenStream = null;
   screenWarning = null; // aviso para quem transmite (ex: áudio da chamada vazando)
   systemAudio = null; // captura nativa do áudio do computador (app de desktop)
@@ -345,29 +347,124 @@ export class VoiceEngine {
       if (!navigator.mediaDevices?.getUserMedia) {
         throw Object.assign(new Error("sem suporte"), { name: window.isSecureContext ? "NotSupportedError" : "InsecureContext" });
       }
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: MIC_CONSTRAINTS, video: false });
+      const stream = await this.getMicStream();
       if (this.destroyed) {
         stream.getTracks().forEach((track) => track.stop());
         return;
       }
-      this.micStream = stream;
-      this.micError = null;
-      this.applyMicEnabled();
-      this.watchSpeaking(SELF, stream);
       // Se já estávamos na sala só ouvindo, começa a enviar o microfone agora.
-      for (const peer of this.peers.values()) {
-        peer.tr?.mic.sender.replaceTrack(this.micTrack()).catch(warn);
-      }
+      this.useMicStream(stream);
     } catch (err) {
       this.micError = describeMicError(err);
     }
+  }
+
+  // O microfone escolhido nas preferências; se ele sumiu (desconectado), o padrão.
+  async getMicStream() {
+    const { inputDeviceId } = getAudioSettings();
+    const audio = inputDeviceId ? { ...MIC_CONSTRAINTS, deviceId: { exact: inputDeviceId } } : MIC_CONSTRAINTS;
+    try {
+      return await navigator.mediaDevices.getUserMedia({ audio, video: false });
+    } catch (err) {
+      if (!inputDeviceId || !["OverconstrainedError", "NotFoundError"].includes(err.name)) throw err;
+      return navigator.mediaDevices.getUserMedia({ audio: MIC_CONSTRAINTS, video: false });
+    }
+  }
+
+  // Passa a usar `stream` como microfone (o primeiro ou um trocado), sem renegociar.
+  useMicStream(stream) {
+    const previous = this.micStream;
+    this.micStream = stream;
+    this.micError = null;
+    this.applyMicEnabled();
+    this.updateMicGain();
+    this.refreshMicSenders();
+    previous?.getTracks().forEach((track) => track.stop());
+    // Desconectaram o microfone em uso: tenta o escolhido de novo ou o padrão.
+    this.micTrack()?.addEventListener("ended", () => {
+      if (this.micStream === stream) this.reopenMic();
+    });
+  }
+
+  async reopenMic() {
+    if (!this.micStream) return;
+    const current = this.micStream;
+    try {
+      const stream = await this.getMicStream();
+      if (this.destroyed || this.micStream !== current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      this.useMicStream(stream);
+    } catch (err) {
+      warn(err);
+      if (this.micStream === current) this.micError = "Não foi possível abrir esse microfone.";
+    }
+    this.changed();
   }
 
   stopMic() {
     if (!this.micStream) return;
     this.micStream.getTracks().forEach((track) => track.stop());
     this.micStream = null;
+    this.dropMicGain();
     this.unwatchSpeaking(SELF);
+  }
+
+  // O que vai para os outros: o microfone direto ou, com volume de entrada fora dos
+  // 100%, a saída do ganho.
+  outgoingMicTrack() {
+    return this.micGain?.track ?? this.micTrack();
+  }
+
+  refreshMicSenders() {
+    const track = this.outgoingMicTrack();
+    for (const peer of this.peers.values()) {
+      peer.tr?.mic.sender.replaceTrack(track).catch(warn);
+    }
+    // O indicador de fala acompanha o que os outros ouvem (volume 0 = não acende).
+    if (track) this.watchSpeaking(SELF, new MediaStream([track]));
+  }
+
+  // No padrão (100%) o microfone vai direto, sem passar pelo Web Audio.
+  updateMicGain() {
+    const volume = getAudioSettings().inputVolume;
+    const track = this.micTrack();
+    if (volume === 1 || !track || !this.audioContext) {
+      this.dropMicGain();
+      return;
+    }
+    if (this.micGain?.source.mediaStream.getAudioTracks()[0] !== track) {
+      this.dropMicGain();
+      const source = this.audioContext.createMediaStreamSource(new MediaStream([track]));
+      const gain = this.audioContext.createGain();
+      const destination = this.audioContext.createMediaStreamDestination();
+      source.connect(gain).connect(destination);
+      this.micGain = { source, gain, track: destination.stream.getAudioTracks()[0] };
+    }
+    this.micGain.gain.gain.value = volume;
+  }
+
+  dropMicGain() {
+    if (!this.micGain) return;
+    this.micGain.source.disconnect();
+    this.micGain.gain.disconnect();
+    this.micGain.track.stop();
+    this.micGain = null;
+  }
+
+  setInputVolume(volume) {
+    updateAudioSettings({ inputVolume: volume });
+    const before = this.outgoingMicTrack();
+    this.updateMicGain();
+    // Passou a precisar (ou deixou de precisar) do ganho: troca a trilha enviada.
+    if (this.outgoingMicTrack() !== before) this.refreshMicSenders();
+  }
+
+  // Vale na hora se o microfone estiver aberto; senão, na próxima vez que abrir.
+  async setInputDevice(deviceId) {
+    updateAudioSettings({ inputDeviceId: deviceId });
+    await this.reopenMic();
   }
 
   effectiveMuted() {
@@ -821,7 +918,7 @@ export class VoiceEngine {
     peer.screenAudioStream = new MediaStream([screenAudio.receiver.track]);
     this.watchSpeaking(peer.id, peer.micStream);
     // Tela: só depois que a pessoa pedir (ver applyScreenTracks).
-    return mic.sender.replaceTrack(this.micTrack());
+    return mic.sender.replaceTrack(this.outgoingMicTrack());
   }
 
   signal(peer, payload) {

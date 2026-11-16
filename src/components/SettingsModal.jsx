@@ -36,6 +36,7 @@ import { getStartWithSystem, isDesktop, isWindows, setStartWithSystem } from "..
 import DownloadAppButton from "./DownloadAppButton.jsx";
 import { SITE_COMMIT, getAppVersion } from "../lib/version.js";
 import { IconButton } from "./ui.jsx";
+import { InputSettings, OutputSettings } from "./AudioControls.jsx";
 import ProfileEditor from "./ProfileEditor.jsx";
 import TurnStatsPanel from "./TurnStatsPanel.jsx";
 
@@ -536,6 +537,13 @@ function VoiceTab() {
 
   return (
     <div className="settings-section-list">
+      <section>
+        <InputSettings headingClass="field-label" />
+      </section>
+      <section>
+        <OutputSettings headingClass="field-label" />
+      </section>
+
       <section>
         <h3 className="field-label">Resolução da transmissão de tela</h3>
         <div className="chip-row" role="radiogroup" aria-label="Resolução">

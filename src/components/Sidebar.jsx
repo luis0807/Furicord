@@ -14,18 +14,22 @@ import {
   Settings,
   Signal,
   Volume2,
+  VolumeX,
 } from "lucide-react";
 import { useChat } from "../state/chat-context.js";
-import { useIsSpeaking, useVoice } from "../voice/voice-context.js";
+import { useAudioSettings, useIsSpeaking, useVoice } from "../voice/voice-context.js";
 import { SELF } from "../voice/VoiceEngine.js";
+import { userAudio } from "../voice/audioSettings.js";
 import { cls } from "../lib/cls.js";
 import { getSoundsEnabled, playSound, setSoundsEnabled, subscribeSounds } from "../lib/sounds.js";
 import { useOverlays } from "./overlay-context.js";
 import { Avatar, IconButton, Logo, UserName } from "./ui.jsx";
+import { AudioMenuButton } from "./AudioControls.jsx";
 
 export default function Sidebar({ onNavigate }) {
   const { state, setView } = useChat();
   const voice = useVoice();
+  const audio = useAudioSettings();
   const isSpeaking = useIsSpeaking();
   const { openProfile } = useOverlays();
   const { channels, view, unread } = state;
@@ -92,11 +96,19 @@ export default function Sidebar({ onNavigate }) {
                         type="button"
                         className="voice-member"
                         onClick={(event) => openProfile(member.name, event)}
+                        // Botão direito também abre (é lá que ficam volume e silenciar).
+                        onContextMenu={(event) => {
+                          event.preventDefault();
+                          openProfile(member.name, event);
+                        }}
                       >
                         <Avatar name={member.name} size={22} speaking={isSpeaking(member.id)} />
                         <UserName name={member.name} className="voice-member-name" />
                         <span className="voice-member-icons">
                           {member.sharing && <span className="live-pill">AO VIVO</span>}
+                          {member.id !== voice.selfId && userAudio(audio, member.name).muted && (
+                            <VolumeX size={14} className="is-locally-muted" aria-label="Silenciado para você" />
+                          )}
                           {member.deafened ? (
                             <HeadphoneOff size={14} aria-label="Sem áudio" />
                           ) : (
@@ -192,20 +204,26 @@ function UserPanel() {
           <span className="user-panel-status">{online ? "Online" : "Reconectando…"}</span>
         </span>
       </button>
-      <IconButton
-        label={micOff ? "Ligar microfone" : "Silenciar microfone"}
-        danger={micOff}
-        onClick={() => voice.setMuted(!micOff)}
-      >
-        {micOff ? <MicOff /> : <Mic />}
-      </IconButton>
-      <IconButton
-        label={voice.deafened ? "Ligar áudio" : "Desligar áudio"}
-        danger={voice.deafened}
-        onClick={() => voice.setDeafened(!voice.deafened)}
-      >
-        {voice.deafened ? <HeadphoneOff /> : <Headphones />}
-      </IconButton>
+      <div className="audio-button-group">
+        <IconButton
+          label={micOff ? "Ligar microfone" : "Silenciar microfone"}
+          danger={micOff}
+          onClick={() => voice.setMuted(!micOff)}
+        >
+          {micOff ? <MicOff /> : <Mic />}
+        </IconButton>
+        <AudioMenuButton kind="input" />
+      </div>
+      <div className="audio-button-group">
+        <IconButton
+          label={voice.deafened ? "Ligar áudio" : "Desligar áudio"}
+          danger={voice.deafened}
+          onClick={() => voice.setDeafened(!voice.deafened)}
+        >
+          {voice.deafened ? <HeadphoneOff /> : <Headphones />}
+        </IconButton>
+        <AudioMenuButton kind="output" />
+      </div>
       <IconButton label="Configurações" onClick={() => openSettings()}>
         <Settings />
       </IconButton>

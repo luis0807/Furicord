@@ -1,9 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Pencil } from "lucide-react";
 import { useChat, useProfile } from "../state/chat-context.js";
+import { useVoice } from "../voice/voice-context.js";
 import { OverlayContext } from "./overlay-context.js";
 import ProfileCard from "./ProfileCard.jsx";
 import SettingsModal from "./SettingsModal.jsx";
+import { UserAudioControls } from "./AudioControls.jsx";
 
 export function OverlayProvider({ children }) {
   const [card, setCard] = useState(null); // { name, fallback, anchor }
@@ -43,11 +45,17 @@ const MARGIN = 12;
 
 function ProfilePopover({ name, fallback, anchor, onClose, onEdit }) {
   const { state } = useChat();
+  const voice = useVoice();
   const live = useProfile(name);
   const ref = useRef(null);
   const [position, setPosition] = useState(null);
   const isSelf = name === state.self?.name;
   const profile = live !== undefined ? live : fallback;
+  // Na mesma sala de voz que você: dá para mudar o volume dela ou silenciar.
+  const inYourCall =
+    !isSelf &&
+    Boolean(voice.channelId) &&
+    state.voice.some((entry) => entry.name === name && entry.channelId === voice.channelId);
 
   // Ao lado de quem foi clicado; se não couber, do outro lado; no celular, centralizado.
   useLayoutEffect(() => {
@@ -87,10 +95,12 @@ function ProfilePopover({ name, fallback, anchor, onClose, onEdit }) {
         profile={profile}
         online={state.users.some((user) => user.name === name && user.online)}
         footer={
-          isSelf && (
+          isSelf ? (
             <button type="button" className="button-secondary profile-edit" onClick={onEdit}>
               <Pencil size={16} /> Editar perfil
             </button>
+          ) : (
+            inYourCall && <UserAudioControls name={name} />
           )
         }
       />

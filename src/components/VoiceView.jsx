@@ -14,15 +14,18 @@ import {
   ScreenShareOff,
   TriangleAlert,
   Volume2,
+  VolumeX,
 } from "lucide-react";
 import { useChat } from "../state/chat-context.js";
-import { useIsSpeaking, useVoice } from "../voice/voice-context.js";
+import { useAudioSettings, useIsSpeaking, useVoice } from "../voice/voice-context.js";
 import { CONNECT_TIMEOUT_MS, SLOW_CONNECT_MS } from "../voice/VoiceEngine.js";
+import { userAudio } from "../voice/audioSettings.js";
 import { colorFor } from "../lib/avatar.js";
 import { listNames } from "../lib/format.js";
 import { cls } from "../lib/cls.js";
 import { Avatar, IconButton, UserName } from "./ui.jsx";
 import ChannelHeader from "./ChannelHeader.jsx";
+import { useOverlays } from "./overlay-context.js";
 
 export default function VoiceView({ channel, layout }) {
   const { state } = useChat();
@@ -78,6 +81,7 @@ function VoiceLobby({ channel, participants }) {
 
 function VoiceStage({ participants }) {
   const voice = useVoice();
+  const audio = useAudioSettings();
   const isSpeaking = useIsSpeaking();
   const [focusKey, setFocusKey] = useState(null);
 
@@ -108,6 +112,7 @@ function VoiceStage({ participants }) {
       key={tile.key}
       participant={tile.participant}
       isSelf={tile.isSelf}
+      locallyMuted={!tile.isSelf && userAudio(audio, tile.participant.name).muted}
       speaking={isSpeaking(tile.participant.id)}
       connectionState={
         tile.isSelf ? "connected" : peerStatus(voice.peers[tile.participant.id], voice.waitingSince[tile.participant.id], voice.turnLimited)
@@ -184,14 +189,30 @@ function peerStatus(peer, waitingSince, turnLimited) {
   return waited > SLOW_CONNECT_MS ? "slow" : "new";
 }
 
-function PersonTile({ participant, isSelf, speaking, connectionState }) {
+// Clicar (ou botão direito) abre o perfil, com o volume e o "silenciar para mim".
+function PersonTile({ participant, isSelf, locallyMuted, speaking, connectionState }) {
+  const { openProfile } = useOverlays();
   const status = isSelf || connectionState === "connected" ? null : (CONNECTION_LABELS[connectionState] ?? "Conectando…");
+  const open = (event) => {
+    event.preventDefault();
+    openProfile(participant.name, event);
+  };
 
   return (
-    <div className={cls("tile", "person-tile", speaking && "is-speaking")} style={{ "--tile-color": colorFor(participant.name) }}>
+    <div
+      className={cls("tile", "person-tile", speaking && "is-speaking")}
+      style={{ "--tile-color": colorFor(participant.name) }}
+      role="button"
+      tabIndex={0}
+      aria-label={`Perfil de ${participant.name}`}
+      onClick={open}
+      onContextMenu={open}
+      onKeyDown={(event) => (event.key === "Enter" || event.key === " ") && open(event)}
+    >
       <Avatar name={participant.name} size={72} />
       {status && <div className="tile-status">{status}</div>}
       <div className="tile-label">
+        {locallyMuted && <VolumeX size={14} className="is-locally-muted" aria-label="Silenciado para você" />}
         {participant.deafened ? <HeadphoneOff size={14} /> : participant.muted && <MicOff size={14} />}
         <span>
           <UserName name={participant.name} />

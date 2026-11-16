@@ -681,7 +681,7 @@ textarea {
 .user-panel {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
   padding: 8px 8px max(8px, env(safe-area-inset-bottom)) 10px;
   background: var(--bg-app);
 }
@@ -733,6 +733,186 @@ textarea {
 .user-panel-status {
   color: var(--text-muted);
   font-size: 12px;
+}
+
+/* ---------- Áudio: menu de dispositivos e volumes ---------- */
+
+.audio-button-group {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Setinha ao lado do microfone/áudio que abre o menu de dispositivos. */
+.audio-menu-toggle {
+  width: 14px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  margin-left: -3px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.audio-menu-toggle:hover,
+.audio-menu-toggle.is-open {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.audio-menu-toggle svg {
+  transition: transform 0.15s;
+}
+
+.audio-menu-toggle.is-open svg {
+  transform: rotate(180deg);
+}
+
+.popover {
+  position: fixed;
+  z-index: 70;
+  width: 300px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-solid);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
+}
+
+.audio-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.audio-settings .section-title,
+.settings-section-list .audio-settings .field-label {
+  margin: 0;
+}
+
+.audio-settings .settings-hint {
+  margin: -4px 0 0;
+}
+
+.device-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.device-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-soft);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.device-option:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.device-option.is-selected {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.device-option-dot {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--text-faint);
+  border-radius: 50%;
+}
+
+.device-option.is-selected .device-option-dot {
+  border-color: var(--accent);
+  background: radial-gradient(circle, var(--accent) 0 3px, transparent 3.5px);
+}
+
+.device-option-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.device-option-text > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.device-option-text small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.volume-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-soft);
+  font-size: 14px;
+}
+
+.volume-field-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.volume-field-value {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.volume-field input[type="range"] {
+  width: 100%;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.volume-field.is-disabled {
+  opacity: 0.5;
+}
+
+.volume-field.is-disabled input[type="range"] {
+  cursor: default;
+}
+
+/* Volume e "silenciar para mim" no perfil de quem está na sua sala. */
+.user-audio {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.user-audio .settings-hint {
+  margin: 0;
+}
+
+.is-locally-muted {
+  color: var(--danger);
 }
 
 /* ---------- Cabeçalho do canal ---------- */
@@ -1622,6 +1802,14 @@ button.download-app:disabled {
 
 .tile.is-speaking {
   outline-color: var(--success);
+}
+
+.person-tile {
+  cursor: pointer;
+}
+
+.person-tile:focus-visible:not(.is-speaking) {
+  outline-color: var(--accent);
 }
 
 .screen-tile {

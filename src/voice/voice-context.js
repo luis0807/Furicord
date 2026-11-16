@@ -1,5 +1,6 @@
-import { createContext, useContext } from "react";
+import { createContext, useContext, useSyncExternalStore } from "react";
 import { SELF } from "./VoiceEngine.js";
+import { getAudioSettings, subscribeAudioSettings } from "./audioSettings.js";
 
 export const VoiceContext = createContext(null);
 
@@ -13,4 +14,9 @@ export function useVoice() {
 export function useIsSpeaking() {
   const voice = useVoice();
   return (id) => (id === voice.selfId ? voice.speaking.has(SELF) : voice.speaking.has(id));
+}
+
+// Dispositivos, volumes e quem você silenciou (ver audioSettings.js).
+export function useAudioSettings() {
+  return useSyncExternalStore(subscribeAudioSettings, getAudioSettings);
 }

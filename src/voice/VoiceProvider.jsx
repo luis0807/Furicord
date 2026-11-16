@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { playSound, setSoundsSilenced } from "../lib/sounds.js";
+import { playSound, setSoundsOutput, setSoundsSilenced } from "../lib/sounds.js";
 import { loadStreamQuality } from "../lib/streamQuality.js";
 import { useChat } from "../state/chat-context.js";
-import { VoiceContext } from "./voice-context.js";
+import { VoiceContext, useAudioSettings } from "./voice-context.js";
 import { VoiceEngine } from "./VoiceEngine.js";
+import { updateAudioSettings, updateUserAudio, voiceVolume } from "./audioSettings.js";
+import { applyElementOutput, boostStream, canBoost, setPlaybackOutput } from "./playback.js";
 
 const IDLE_SNAPSHOT = {
   channelId: null,
@@ -56,6 +58,15 @@ export function VoiceProvider({ children }) {
 
   useVoiceSounds(snapshot, state.voice, state.self?.id);
 
+  const audio = useAudioSettings();
+  useEffect(() => {
+    setPlaybackOutput(audio.outputDeviceId);
+    setSoundsOutput(audio.outputDeviceId);
+  }, [audio.outputDeviceId]);
+
+  // As preferências por pessoa são guardadas pelo nome (o id muda a cada conexão).
+  const names = useMemo(() => new Map(state.voice.map((entry) => [entry.id, entry.name])), [state.voice]);
+
   const value = useMemo(
     () => ({
       ...snapshot,
@@ -77,6 +88,16 @@ export function VoiceProvider({ children }) {
       dropScreenAudio: () => engine?.dropScreenAudio(),
       watchScreen: (id, watch) => engine?.watchScreen(id, watch),
       setStreamQuality: (quality) => engine?.setStreamQuality(quality),
+      // Microfone: a engine reabre/reenvia na hora se estiver numa sala.
+      setInputDevice: (deviceId) =>
+        engine ? engine.setInputDevice(deviceId) : updateAudioSettings({ inputDeviceId: deviceId }),
+      setInputVolume: (volume) =>
+        engine ? engine.setInputVolume(volume) : updateAudioSettings({ inputVolume: volume }),
+      setOutputDevice: (deviceId) => updateAudioSettings({ outputDeviceId: deviceId }),
+      setOutputVolume: (volume) => updateAudioSettings({ outputVolume: volume }),
+      // Só para você: os outros continuam ouvindo essa pessoa normalmente.
+      setUserVolume: (name, volume) => updateUserAudio(name, { volume }),
+      setUserMuted: (name, muted) => updateUserAudio(name, { muted }),
     }),
     [snapshot, engine, state.self?.id],
   );
@@ -88,7 +109,13 @@ export function VoiceProvider({ children }) {
           mesmo quando você está olhando um canal de texto. */}
       <div hidden>
         {Object.values(snapshot.peers).map((peer) => (
-          <PeerAudio key={peer.id} peer={peer} muted={snapshot.deafened} />
+          <PeerAudio
+            key={peer.id}
+            peer={peer}
+            voiceVolume={snapshot.deafened ? 0 : voiceVolume(audio, names.get(peer.id))}
+            screenVolume={snapshot.deafened ? 0 : audio.outputVolume}
+            sinkId={audio.outputDeviceId}
+          />
         ))}
       </div>
     </VoiceContext.Provider>
@@ -143,17 +170,21 @@ function useVoiceSounds(snapshot, entries, selfId) {
   }, [channelId, joiningChannelId, reconnecting, sharing, entries, selfId]);
 }
 
-function PeerAudio({ peer, muted }) {
+// O volume por pessoa vale para a voz; o áudio da transmissão segue o volume de saída.
+function PeerAudio({ peer, voiceVolume, screenVolume, sinkId }) {
   return (
     <>
-      <AudioSink stream={peer.micStream} muted={muted} />
-      <AudioSink stream={peer.screenAudioStream} muted={muted} />
+      <AudioSink stream={peer.micStream} volume={voiceVolume} sinkId={sinkId} />
+      <AudioSink stream={peer.screenAudioStream} volume={screenVolume} sinkId={sinkId} />
     </>
   );
 }
 
-function AudioSink({ stream, muted }) {
+// `volume`: 0 = mudo, 1 = normal, até 4 (200% da pessoa x 200% da saída).
+function AudioSink({ stream, volume, sinkId }) {
   const ref = useRef(null);
+  const boostRef = useRef(null);
+  const boosted = volume > 1 && canBoost(sinkId);
 
   useEffect(() => {
     const element = ref.current;
@@ -163,8 +194,30 @@ function AudioSink({ stream, muted }) {
   }, [stream]);
 
   useEffect(() => {
-    if (ref.current) ref.current.muted = muted;
-  }, [muted]);
+    const element = ref.current;
+    if (!element) return;
+    // Reforçado, quem toca é o ganho (ver playback.js); o <audio> segue tocando mudo.
+    element.muted = boosted || volume === 0;
+    element.volume = Math.min(1, volume);
+  }, [boosted, volume]);
+
+  useEffect(() => {
+    if (ref.current) applyElementOutput(ref.current, sinkId);
+  }, [sinkId]);
+
+  useEffect(() => {
+    if (!boosted || !stream) return;
+    const boost = boostStream(stream);
+    boostRef.current = boost;
+    return () => {
+      boost.stop();
+      boostRef.current = null;
+    };
+  }, [boosted, stream]);
+
+  useEffect(() => {
+    boostRef.current?.setGain(volume);
+  }, [boosted, stream, volume]);
 
   return <audio ref={ref} autoPlay />;
 }

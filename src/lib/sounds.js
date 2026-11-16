@@ -52,6 +52,7 @@ const SOUNDS = {
 
 let context = null;
 let master = null;
+let outputDeviceId = ""; // alto-falante escolhido nas preferências de áudio ("" = padrão)
 let enabled = readEnabled();
 // Ensurdecido: só tocam os sons pedidos com { always: true } (o retorno dos botões).
 let silenced = false;
@@ -100,6 +101,19 @@ export function setSoundsSilenced(value) {
   silenced = Boolean(value);
 }
 
+// Os efeitos saem no mesmo alto-falante da chamada (onde o navegador deixa escolher).
+export function setSoundsOutput(deviceId) {
+  outputDeviceId = deviceId;
+  applyOutput();
+}
+
+function applyOutput() {
+  if (!context?.setSinkId || context.sinkId === outputDeviceId) return;
+  context.setSinkId(outputDeviceId).catch(() => {
+    if (outputDeviceId) context.setSinkId("").catch(() => {});
+  });
+}
+
 function readEnabled() {
   try {
     return localStorage.getItem(STORAGE_KEY) !== "off";
@@ -116,6 +130,7 @@ function getContext() {
     master = context.createGain();
     master.gain.value = MASTER_VOLUME;
     master.connect(context.destination);
+    applyOutput();
   }
   return context;
 }

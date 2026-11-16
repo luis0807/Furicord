@@ -136,9 +136,11 @@ function VoiceStage({ participants }) {
         <div className="voice-alert" role="status">
           <TriangleAlert size={16} />
           <span>{voice.screenWarning}</span>
-          <button type="button" className="button-secondary voice-alert-action" onClick={voice.dropScreenAudio}>
-            Transmitir sem áudio
-          </button>
+          {voice.screenStream?.getAudioTracks().length > 0 && (
+            <button type="button" className="button-secondary voice-alert-action" onClick={voice.dropScreenAudio}>
+              Transmitir sem áudio
+            </button>
+          )}
         </div>
       )}
 

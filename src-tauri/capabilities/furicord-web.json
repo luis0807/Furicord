@@ -13,6 +13,8 @@
     "autostart:allow-disable",
     "notification:default",
     "updater:default",
+    "allow-start-system-audio",
+    "allow-stop-system-audio",
     "process:allow-restart"
   ]
 }

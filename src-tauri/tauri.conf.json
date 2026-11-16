@@ -16,7 +16,8 @@
         "height": 800,
         "minWidth": 900,
         "minHeight": 600,
-        "visible": false
+        "visible": false,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,AudioServiceOutOfProcess --autoplay-policy=no-user-gesture-required"
       }
     ],
     "security": {

@@ -6,6 +6,17 @@ import react from "@vitejs/plugin-react";
 // VITE_SERVER_URL fica vazio no desenvolvimento.
 export default defineConfig({
   plugins: [react()],
+  // Pacotes do Tauri são importados sob demanda (só no app de desktop). Sem isto, o
+  // servidor de desenvolvimento os prepara tarde e responde 504 na primeira vez.
+  optimizeDeps: {
+    include: [
+      "@tauri-apps/api/app",
+      "@tauri-apps/api/core",
+      "@tauri-apps/plugin-autostart",
+      "@tauri-apps/plugin-process",
+      "@tauri-apps/plugin-updater",
+    ],
+  },
   // Commit do deploy (o Vercel informa no build); "local" fora dele.
   define: {
     __SITE_COMMIT__: JSON.stringify((process.env.VERCEL_GIT_COMMIT_SHA ?? "").slice(0, 7) || "local"),

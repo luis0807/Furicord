@@ -1,5 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(windows)]
+mod system_audio;
+
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{
     menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
@@ -37,6 +40,11 @@ fn main() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .manage(system_audio::SystemAudio::default())
+        .invoke_handler(tauri::generate_handler![
+            system_audio::start_system_audio,
+            system_audio::stop_system_audio
+        ])
         .setup(|app| {
             let startup_enabled = app.autolaunch().is_enabled().unwrap_or(false);
 

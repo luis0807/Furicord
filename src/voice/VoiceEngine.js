@@ -9,6 +9,7 @@ import {
   saveStreamQuality,
   videoConstraints,
 } from "../lib/streamQuality.js";
+import { nativeSystemAudioSupported, startSystemAudio } from "./systemAudio.js";
 
 /*
  * Voz e transmissão de tela via WebRTC em malha (cada participante conecta direto
@@ -81,6 +82,7 @@ export class VoiceEngine {
   micError = null;
   screenStream = null;
   screenWarning = null; // aviso para quem transmite (ex: áudio da chamada vazando)
+  systemAudio = null; // captura nativa do áudio do computador (app de desktop)
   watching = new Set(); // ids das pessoas cuja tela estamos assistindo
   streamQuality = loadStreamQuality();
   error = null;
@@ -103,6 +105,7 @@ export class VoiceEngine {
     socket.on("disconnect", this.handleDisconnect);
     socket.on("session", this.handleSession);
     this.snapshot = this.buildSnapshot();
+    nativeSystemAudioSupported(); // já deixa a resposta pronta para quando for transmitir
   }
 
   // --- Integração com React ---------------------------------------------------
@@ -421,20 +424,26 @@ export class VoiceEngine {
       return;
     }
 
+    // No app de desktop o áudio do computador vem da captura nativa, que já deixa de
+    // fora as vozes da chamada; aí a escolha de tela não pede áudio.
+    const nativeAudio = await nativeSystemAudioSupported();
+
     let stream;
     try {
       stream = await navigator.mediaDevices.getDisplayMedia({
         video: videoConstraints(this.streamQuality),
-        audio: {
-          // Áudio de jogo/vídeo não é voz: os filtros de voz estragariam o som.
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-          // Chrome recente: não captura o próprio áudio da página (as vozes da sala),
-          // senão os outros ouviriam eco de si mesmos ao transmitir a tela inteira.
-          restrictOwnAudio: true,
-        },
-        systemAudio: "include",
+        audio: nativeAudio
+          ? false
+          : {
+              // Áudio de jogo/vídeo não é voz: os filtros de voz estragariam o som.
+              echoCancellation: false,
+              noiseSuppression: false,
+              autoGainControl: false,
+              // Chrome recente: não captura o próprio áudio da página (as vozes da sala),
+              // senão os outros ouviriam eco de si mesmos ao transmitir a tela inteira.
+              restrictOwnAudio: true,
+            },
+        systemAudio: nativeAudio ? "exclude" : "include",
         selfBrowserSurface: "exclude",
         surfaceSwitching: "include",
       });
@@ -448,16 +457,33 @@ export class VoiceEngine {
       return;
     }
 
+    // Tela inteira no app: junta o áudio do computador (sem o Furicord).
+    let systemAudio = null;
+    let audioWarning = null;
+    if (nativeAudio && stream.getVideoTracks()[0]?.getSettings().displaySurface === "monitor") {
+      try {
+        systemAudio = await startSystemAudio();
+        stream.addTrack(systemAudio.track);
+      } catch (err) {
+        warn(err);
+        audioWarning = "Não foi possível capturar o áudio do computador: a transmissão vai sem som.";
+      }
+    }
+
     if (!this.channelId || this.screenStream) {
+      systemAudio?.stop();
       stream.getTracks().forEach((track) => track.stop());
       return;
     }
 
     this.screenStream = stream;
+    this.systemAudio = systemAudio;
     this.error = null;
-    this.screenWarning = ownAudioLeaks(stream)
-      ? "O áudio do computador está indo junto, e este navegador não conseguiu tirar dele as vozes da chamada: quem está na sala vai se ouvir na sua transmissão."
-      : null;
+    this.screenWarning =
+      audioWarning ??
+      (!nativeAudio && ownAudioLeaks(stream)
+        ? "O áudio do computador está indo junto, e este navegador não conseguiu tirar dele as vozes da chamada: quem está na sala vai se ouvir na sua transmissão. No app de desktop isso não acontece."
+        : null);
     const videoTrack = this.screenVideoTrack();
     if (videoTrack) videoTrack.contentHint = contentHintFor(this.streamQuality);
     // O botão "Parar de compartilhar" do próprio navegador encerra a trilha.
@@ -473,6 +499,8 @@ export class VoiceEngine {
     if (!this.screenStream) return;
     this.screenStream.getTracks().forEach((track) => track.stop());
     this.screenStream = null;
+    this.systemAudio?.stop();
+    this.systemAudio = null;
     this.screenWarning = null;
     // Quem assistia esta transmissão escolhe de novo na próxima.
     for (const peer of this.peers.values()) {
@@ -491,6 +519,8 @@ export class VoiceEngine {
     if (!track) return;
     track.stop();
     this.screenStream.removeTrack(track);
+    this.systemAudio?.stop();
+    this.systemAudio = null;
     this.screenWarning = null;
     for (const peer of this.peers.values()) this.applyScreenTracks(peer);
     this.changed();

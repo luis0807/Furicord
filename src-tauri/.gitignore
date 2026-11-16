@@ -1,2 +1,4 @@
 /target/
+# Pastas de compilação alternativas (cargo --target-dir), como target-audiotest
+/target-*/
 /gen/schemas

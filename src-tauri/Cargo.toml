@@ -15,3 +15,9 @@ tauri-plugin-notification = "2"
 tauri-plugin-process = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-single-instance = "2"
+
+[target.'cfg(windows)'.dependencies]
+# Áudio do computador sem o próprio Furicord (process loopback do Windows 10 2004+).
+wasapi = "0.27"
+# Mesma versão que o Tauri usa: para perguntar ao WebView2 o PID do processo dele.
+webview2-com = "0.39"
